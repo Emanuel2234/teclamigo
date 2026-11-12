@@ -4,142 +4,318 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Teclamigo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
 <style>
-  :root { --bg:#111; --card:#1e1e1e; --txt:#eee; --der:#66bb6a; --izq:#ab47bc; --rojo:#ef5350; --amar:#fff176; --azul:#4fc3f7; }
+  /* Piano de cola de noche: laca de ébano, marfil, bronce de pedales y fieltro de martillos */
+  :root {
+    --ebano:#17130F; --caoba:#231C16; --caoba2:#2D241D; --veta:#3E332A;
+    --marfil:#F3EBDD; --marfil2:#D9CDB9; --tenue:#A89A88;
+    --der:#E9B44C; --izq:#6EA8E0; --fieltro:#D0574B; --bien:#8FC98A;
+    --radio:14px; --radio-chico:9px;
+    --titulo:'Bricolage Grotesque', system-ui, sans-serif;
+    --texto:'Atkinson Hyperlegible', system-ui, sans-serif;
+  }
   * { box-sizing:border-box; }
-  .zona { border:2px dashed #555; border-radius:12px; padding:22px 14px; text-align:center; cursor:pointer; transition:.15s; }
-  .zona:hover, .zona.encima { border-color:var(--azul); background:#1a2a33; }
-  .zona .grande { font-size:1.35rem; font-weight:bold; margin:4px 0; }
-  .zona .chico { color:#aaa; font-size:.9rem; }
-  .biblio { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:8px; margin-top:8px; }
-  .tarjeta { background:#2a2a2a; border:1px solid #3a3a3a; border-radius:8px; padding:9px 10px; cursor:pointer; text-align:left; color:var(--txt); font:inherit; }
-  .tarjeta:hover { border-color:var(--azul); }
-  .tarjeta.activa { border-color:var(--der); background:#22301f; }
+  html { background:var(--ebano); }
+  body { margin:0; padding:0 16px 40px; font-family:var(--texto); color:var(--marfil); background:
+         radial-gradient(1200px 500px at 50% -10%, #2a2119 0%, transparent 70%), var(--ebano);
+         line-height:1.45; min-height:100vh; }
+  .contenedor { max-width:1180px; margin:0 auto; }
+  h1, h2, h3 { font-family:var(--titulo); margin:0; letter-spacing:-.01em; }
+  button, select, input { font:inherit; color:inherit; }
+  :focus-visible { outline:3px solid var(--der); outline-offset:2px; border-radius:6px; }
+  [hidden] { display:none !important; }
+
+  /* Cabecera */
+  .cabecera { display:flex; align-items:center; gap:14px; padding:18px 0 14px; flex-wrap:wrap; }
+  .marca { display:flex; align-items:center; gap:10px; margin-right:auto; }
+  .marca h1 { font-size:1.75rem; font-weight:800; }
+  .logo { width:34px; height:34px; }
+  .teclado-estado { display:flex; align-items:center; gap:8px; font-size:.9rem; color:var(--tenue); }
+  #actividad { padding:5px 11px; border-radius:20px; background:var(--caoba2); color:var(--marfil2); font-size:.85rem; transition:background .25s; }
+  .boton { background:var(--caoba2); border:1px solid var(--veta); border-radius:var(--radio-chico); padding:8px 14px; cursor:pointer; }
+  .boton:hover { border-color:var(--marfil2); }
+  .boton:disabled { opacity:.4; cursor:not-allowed; border-color:var(--veta); }
+  .boton.principal { background:var(--marfil); color:var(--ebano); border-color:var(--marfil); font-weight:700; }
+
+  /* Elegir canción */
+  .estante { display:grid; grid-template-columns:minmax(240px, 1fr) 2fr; gap:16px; margin-bottom:14px; align-items:start; }
+  @media (max-width:820px) { .estante { grid-template-columns:1fr; } }
+  .zona { border:2px dashed var(--veta); border-radius:var(--radio); padding:26px 18px; text-align:center; cursor:pointer; min-height:190px; margin-top:31px;
+          display:flex; flex-direction:column; justify-content:center; gap:6px; background:rgba(255,255,255,.015); transition:border-color .15s, background .15s; }
+  .zona:hover, .zona.encima { border-color:var(--der); background:rgba(233,180,76,.06); }
+  .zona .grande { font-family:var(--titulo); font-size:1.4rem; font-weight:800; }
+  .zona .chico { color:var(--tenue); font-size:.9rem; }
+  .biblioteca h2 { font-size:1.05rem; font-weight:600; color:var(--marfil2); margin-bottom:8px; }
+  .biblio { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:8px; }
+  .tarjeta { background:var(--caoba); border:1px solid var(--veta); border-radius:var(--radio-chico); padding:10px 12px; cursor:pointer; text-align:left; }
+  .tarjeta:hover { border-color:var(--marfil2); }
+  .tarjeta.activa { border-color:var(--der); box-shadow:inset 0 0 0 1px var(--der); }
   .tarjeta b { display:block; font-size:.95rem; }
-  .tarjeta span { color:#aaa; font-size:.8rem; }
-  .tarjeta .nivel { color:#000 !important; }
-  .nivel { display:inline-block; font-size:.72rem; padding:1px 6px; border-radius:9px; margin-top:4px; color:#000; font-weight:bold; }
-  .latido { animation:latido 1s ease-in-out 3; }
-  @keyframes latido { 50% { transform:scale(1.08); box-shadow:0 0 0 4px #4fc3f755; } }
-  body { font-family:system-ui,sans-serif; background:var(--bg); color:var(--txt); margin:0; padding:14px; }
-  h1 { font-size:1.3rem; margin:0 0 8px; }
-  .fila { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-  .card { background:var(--card); border-radius:10px; padding:10px 12px; margin:8px 0; }
-  button, select, .btnfile { background:#2c2c2c; color:var(--txt); border:1px solid #444; padding:7px 11px; border-radius:6px; cursor:pointer; font-size:.9rem; }
-  button.prim { background:var(--azul); color:#000; border:0; font-weight:bold; }
-  .ley { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:middle; margin-right:4px; }
-  #estado { font-size:.85rem; color:#aaa; }
-  #objetivo { font-size:1.6rem; font-weight:bold; min-height:2rem; }
-  #barra { height:8px; background:#333; border-radius:4px; overflow:hidden; margin:6px 0; }
-  #barra div { height:100%; width:0; background:var(--azul); }
-  #escena { position:relative; }
-  canvas { display:block; width:100%; height:340px; background:#0b0b0b; border-radius:8px 8px 0 0; }
-  #piano { position:relative; height:150px; user-select:none; }
-  .tecla { position:absolute; top:0; border:1px solid #000; border-radius:0 0 5px 5px; display:flex; align-items:flex-end; justify-content:center; font-size:10px; padding-bottom:4px; cursor:pointer; }
-  .blanca { height:100%; background:#f5f5f5; color:#555; z-index:1; }
-  .negra { height:62%; background:#222; color:#ccc; z-index:2; }
-  .tecla.meta-R { background:var(--der) !important; color:#000; font-weight:bold; }
-  .tecla.meta-L { background:var(--izq) !important; color:#fff; font-weight:bold; }
-  .tecla.apretada { background:var(--amar) !important; color:#000; }
-  .tecla.error { background:var(--rojo) !important; }
-  .final { color:var(--der); }
+  .tarjeta span { color:var(--tenue); font-size:.8rem; }
+  .tarjeta .nivel { color:var(--ebano) !important; }
+  .nivel { display:inline-block; font-size:.72rem; padding:1px 8px; border-radius:9px; margin-top:5px; font-weight:700; }
+
+  /* Canción actual y conversión */
+  @media (max-width:820px) { .zona { margin-top:0; } }
+  .cancion-actual { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:10px; }
+  .cancion-actual select { background:var(--caoba2); border:1px solid var(--veta); border-radius:var(--radio-chico); padding:8px 10px; max-width:100%; }
+  .btnfile { display:inline-block; }
+  .pistas { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .pistas select { background:var(--caoba2); border:1px solid var(--veta); border-radius:var(--radio-chico); padding:6px 8px; }
+  .ley { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:middle; }
+  .tira { background:var(--caoba); border:1px solid var(--veta); border-radius:var(--radio-chico); padding:12px 14px; margin-bottom:12px; }
+  #barraConv { height:6px; background:var(--veta); border-radius:3px; overflow:hidden; margin:8px 0; }
+  #convBarra { height:100%; width:0; background:var(--der); transition:width .4s; }
+  .tira .fila { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+  .tira summary { cursor:pointer; color:var(--tenue); }
+  .tira select { background:var(--caoba2); border:1px solid var(--veta); border-radius:var(--radio-chico); padding:6px 8px; }
+  #cuentaAudio { color:var(--tenue); }
+
+  /* Escenario */
+  .escenario { background:linear-gradient(180deg, var(--caoba) 0%, #1c1611 100%); border:1px solid var(--veta); border-radius:var(--radio); padding:14px; }
+  .escenario-top { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  #objetivo { font-family:var(--titulo); font-size:1.55rem; font-weight:800; min-height:2.1rem; }
+  .marcador { display:flex; gap:16px; color:var(--tenue); font-size:.9rem; }
+  .marcador b { color:var(--marfil); font-size:1.05rem; margin-left:4px; }
+  .manos-leyenda { display:flex; gap:14px; color:var(--tenue); font-size:.88rem; margin-bottom:8px; }
+  #escena { position:relative; border-radius:10px; overflow:hidden; box-shadow:0 18px 40px rgba(0,0,0,.45); }
+  canvas { display:block; width:100%; height:340px; background:#120f0c; }
+  #piano { position:relative; height:150px; user-select:none; background:#0c0a08; }
+  .tecla { position:absolute; top:0; display:flex; align-items:flex-end; justify-content:center; font-size:10px; padding-bottom:5px; cursor:pointer; transition:background .06s; }
+  .blanca { height:100%; z-index:1; color:#7a6d5c; border-right:1px solid #b9ab94; border-radius:0 0 6px 6px;
+            background:linear-gradient(180deg, #e9e0cf 0%, #f6f0e4 12%, #f3ebdd 85%, #ddd1bc 100%); }
+  .negra { height:62%; z-index:2; color:#cfc3ad; border-radius:0 0 4px 4px;
+           background:linear-gradient(180deg, #0f0c0a 0%, #2b241e 82%, #463b31 92%, #1b1612 100%); box-shadow:0 3px 4px rgba(0,0,0,.5); }
+  .tecla.meta-R { background:linear-gradient(180deg, #f6d38a, var(--der)) !important; color:var(--ebano); font-weight:700; box-shadow:0 0 18px rgba(233,180,76,.55); }
+  .tecla.meta-L { background:linear-gradient(180deg, #a9cdf1, var(--izq)) !important; color:var(--ebano); font-weight:700; box-shadow:0 0 18px rgba(110,168,224,.55); }
+  .tecla.apretada { background:linear-gradient(180deg, #fffaf0, #e6dccb) !important; color:var(--ebano); filter:brightness(.92); }
+  .negra.apretada { background:linear-gradient(180deg, #5a4d41, #3a3129) !important; color:#fff; }
+  .tecla.error { background:var(--fieltro) !important; color:#fff; }
+  .final { color:var(--bien); }
+
+  /* Barra de reproducción */
+  .transporte { display:flex; align-items:center; gap:12px; margin-top:14px; flex-wrap:wrap; }
+  .play { width:54px; height:54px; border-radius:50%; border:none; background:var(--marfil); color:var(--ebano);
+          font-size:1.35rem; cursor:pointer; display:grid; place-items:center; box-shadow:0 4px 14px rgba(0,0,0,.4); flex:none; }
+  .play:hover { background:#fffaf0; }
+  .icono { width:40px; height:40px; border-radius:50%; border:1px solid var(--veta); background:var(--caoba2); cursor:pointer; flex:none; }
+  .icono:hover { border-color:var(--marfil2); }
+  .reloj { font-variant-numeric:tabular-nums; color:var(--marfil2); min-width:3.2em; text-align:center; }
+  .linea { position:relative; flex:1; min-width:180px; height:28px; display:flex; align-items:center; }
+  .linea input { width:100%; margin:0; position:relative; z-index:2; background:transparent; -webkit-appearance:none; appearance:none; height:28px; cursor:pointer; }
+  .linea input::-webkit-slider-runnable-track { height:6px; border-radius:3px; background:linear-gradient(90deg, var(--der) var(--avance,0%), var(--veta) var(--avance,0%)); }
+  .linea input::-moz-range-track { height:6px; border-radius:3px; background:var(--veta); }
+  .linea input::-moz-range-progress { height:6px; border-radius:3px; background:var(--der); }
+  .linea input::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:var(--marfil); margin-top:-6px; box-shadow:0 0 0 4px rgba(233,180,76,.25); }
+  .linea input::-moz-range-thumb { width:18px; height:18px; border:none; border-radius:50%; background:var(--marfil); }
+  #tramoAB { position:absolute; top:7px; height:14px; background:rgba(208,87,75,.28); border-left:2px solid var(--fieltro); border-right:2px solid var(--fieltro); border-radius:3px; z-index:1; pointer-events:none; }
+  .ab { display:flex; gap:6px; align-items:center; }
+  .ab button { width:auto; padding:0 12px; border-radius:20px; height:36px; }
+  .ab button.puesto { border-color:var(--fieltro); color:#f2b8b1; }
+
+  /* Controles de práctica */
+  .controles { display:flex; flex-wrap:wrap; gap:14px 22px; margin-top:16px; align-items:flex-end; }
+  .grupo { display:flex; flex-direction:column; gap:6px; }
+  .rotulo { font-size:.85rem; color:var(--tenue); }
+  .segmentado { display:inline-flex; background:var(--ebano); border:1px solid var(--veta); border-radius:22px; padding:3px; }
+  .segmentado button { background:transparent; border:none; padding:7px 14px; border-radius:18px; cursor:pointer; color:var(--marfil2); }
+  .segmentado button[aria-pressed="true"] { background:var(--marfil); color:var(--ebano); font-weight:700; }
+  .segmentado button:not([aria-pressed="true"]):hover { color:var(--marfil); background:rgba(255,255,255,.05); }
+  #vel { accent-color:var(--der); width:150px; }
+  .atajos { color:var(--tenue); font-size:.82rem; margin-top:12px; }
+  kbd { font-family:var(--texto); background:var(--caoba2); border:1px solid var(--veta); border-bottom-width:2px; border-radius:5px; padding:0 6px; }
+
+  /* Panel de ajustes */
+  .velo { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:20; }
+  .panel-ajustes { position:fixed; top:0; right:0; bottom:0; width:min(400px, 100vw); background:var(--caoba); border-left:1px solid var(--veta);
+                   z-index:21; padding:20px; overflow-y:auto; box-shadow:-20px 0 50px rgba(0,0,0,.5); }
+  .panel-ajustes h2 { font-size:1.4rem; font-weight:800; margin-bottom:14px; }
+  .panel-ajustes h3 { font-size:1rem; font-weight:600; color:var(--marfil2); margin:18px 0 8px; }
+  .panel-ajustes p { color:var(--tenue); font-size:.88rem; margin:6px 0; }
+  .panel-ajustes label { display:flex; align-items:center; gap:8px; margin:6px 0; }
+  .panel-ajustes select { background:var(--caoba2); border:1px solid var(--veta); border-radius:var(--radio-chico); padding:7px 9px; width:100%; }
+  .panel-ajustes input[type=range] { accent-color:var(--der); flex:1; }
+  .panel-ajustes input[type=checkbox] { accent-color:var(--der); }
+  .prueba-silencio { border:1px solid var(--der); border-radius:10px; padding:10px 12px; margin:6px 0; }
+  .prueba-silencio p { margin:0 0 8px; color:var(--marfil); }
+  .fila-botones { display:flex; gap:8px; flex-wrap:wrap; }
+  .cerrar { position:absolute; top:16px; right:16px; }
+  #estado { font-size:.88rem; color:var(--tenue); }
+
+  .latido { animation:latido .9s ease-in-out 2; }
+  @keyframes latido { 50% { transform:scale(1.1); box-shadow:0 0 0 8px rgba(243,235,221,.18); } }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important; } }
 </style>
 </head>
 <body>
-<h1>🎹 Teclamigo</h1>
+<div class="contenedor">
 
-<div class="card" id="bienvenida">
-  <div class="zona" id="zona">
-    <div style="font-size:2rem">🎵</div>
-    <div class="grande">Arrastra aquí tu canción</div>
-    <div class="chico">o haz clic para elegirla · MP3 o WAV · MIDI · partitura (MusicXML)</div>
+<header class="cabecera">
+  <div class="marca">
+    <svg class="logo" viewBox="0 0 34 34" aria-hidden="true">
+      <rect x="1" y="4" width="32" height="26" rx="6" fill="#231C16" stroke="#3E332A"/>
+      <rect x="5" y="8" width="5" height="18" rx="1.5" fill="#F3EBDD"/><rect x="11" y="8" width="5" height="18" rx="1.5" fill="#F3EBDD"/>
+      <rect x="17" y="8" width="5" height="18" rx="1.5" fill="#E9B44C"/><rect x="23" y="8" width="5" height="18" rx="1.5" fill="#F3EBDD"/>
+      <rect x="9" y="8" width="3.4" height="11" rx="1" fill="#17130F"/><rect x="15" y="8" width="3.4" height="11" rx="1" fill="#17130F"/><rect x="27" y="8" width="3.4" height="11" rx="1" fill="#17130F"/>
+    </svg>
+    <h1>Teclamigo</h1>
   </div>
-  <div style="margin-top:12px;color:#aaa">…o practica con una canción de la biblioteca:</div>
-  <div class="biblio" id="biblio"></div>
-</div>
+  <div class="teclado-estado"><span id="actividad">Toca una tecla para comprobar tu teclado</span></div>
+  <button class="boton" id="btnAjustes" aria-expanded="false" aria-controls="ajustes">⚙ Ajustes</button>
+</header>
 
-<div class="card fila">
-  <span id="estado">Buscando teclado...</span>
-  <span id="actividad" style="font-size:.85rem;padding:3px 8px;border-radius:5px;background:#2c2c2c">🎹 Sin señal del teclado todavía</span>
-  <button id="btnCal">Calibrar rango</button>
-  <label><input type="checkbox" id="sonido"> Sonido en el PC</label>
-  <label>Volumen <input type="range" id="volumen" min="-30" max="6" step="1" value="-6"></label>
-</div>
+<section class="estante" id="bienvenida" aria-label="Elegir canción">
+  <div class="zona" id="zona" role="button" tabindex="0" aria-label="Elegir un archivo de canción">
+    <div class="grande">Arrastra tu canción aquí</div>
+    <div class="chico">o haz clic para elegirla. Sirven audios MP3 o WAV, archivos MIDI y partituras MusicXML.</div>
+  </div>
+  <div class="biblioteca">
+    <h2>O practica una de la biblioteca</h2>
+    <div class="biblio" id="biblio"></div>
+  </div>
+</section>
 
-<div class="card fila">
+<div class="cancion-actual">
+  <label for="cancion" class="rotulo">Canción</label>
   <select id="cancion"></select>
-  <label class="btnfile">📂 Cargar canción (partitura, MIDI o audio)<input type="file" id="archivo" accept=".musicxml,.mxl,.xml,.mid,.midi,.wav,.mp3,.ogg,.m4a,audio/*" hidden></label>
-  <label id="opSeparar" hidden title="Quita voz, batería, guitarra y bajo antes de convertir"><input type="checkbox" id="separarPiano" checked> 🎹 Separar el piano antes de detectar notas (recomendado si la canción tiene voz)</label>
-  <span id="pistas" hidden>
-    <span class="ley" style="background:var(--der)"></span><select id="pistaDer"></select>
-    <span class="ley" style="background:var(--izq)"></span><select id="pistaIzq"></select>
-    <span id="infoPistas" style="color:#aaa;font-size:.85rem"></span>
+  <button class="boton" id="btnOtra" aria-expanded="true" aria-controls="bienvenida" hidden>Elegir otra canción</button>
+  <label class="btnfile boton">Abrir archivo<input type="file" id="archivo" accept=".musicxml,.mxl,.xml,.mid,.midi,.wav,.mp3,.ogg,.m4a,audio/*" hidden></label>
+  <span id="pistas" class="pistas" hidden>
+    <span class="ley" style="background:var(--der)"></span><select id="pistaDer" aria-label="Pista para la mano derecha"></select>
+    <span class="ley" style="background:var(--izq)"></span><select id="pistaIzq" aria-label="Pista para la mano izquierda"></select>
+    <span id="infoPistas" class="rotulo"></span>
   </span>
 </div>
 
-<div class="card" id="conversion" hidden>
+<div class="tira" id="conversion" hidden aria-live="polite">
   <div id="convTxt">Preparando...</div>
-  <div id="barraConv" style="height:6px;background:#333;border-radius:3px;overflow:hidden;margin:6px 0"><div id="convBarra" style="height:100%;width:0;background:var(--amar)"></div></div>
+  <div id="barraConv"><div id="convBarra"></div></div>
+  <button class="boton" id="btnCancelar" hidden>Cancelar</button>
   <div class="fila" id="opcAudio" hidden>
     <details>
-      <summary style="cursor:pointer;color:#aaa">Ajustes avanzados (normalmente no hace falta tocarlos)</summary>
-      <div class="fila" style="margin-top:6px">
-        <select id="limpieza">
+      <summary>Ajustes finos de las notas (normalmente no hace falta tocarlos)</summary>
+      <div class="fila" style="margin-top:8px">
+        <select id="limpieza" aria-label="Limpieza de notas">
           <option value="suave">Limpieza suave (más notas)</option>
           <option value="normal" selected>Limpieza normal</option>
           <option value="fuerte">Limpieza fuerte (menos notas)</option>
         </select>
-        <label>Ignorar notas de menos de <input type="range" id="minDur" min="0" max="0.5" step="0.05" value="0.1"> <b id="minDurTxt">0.10 s</b></label>
-        <label>Volumen mínimo <input type="range" id="minAmp" min="0" max="0.8" step="0.05" value="0.2"> <b id="minAmpTxt">0.20</b></label>
+        <label>Ignorar notas de menos de <input type="range" id="minDur" min="0" max="0.5" step="0.05" value="0"> <b id="minDurTxt">0.00 s</b></label>
+        <label>Volumen mínimo <input type="range" id="minAmp" min="0" max="0.8" step="0.05" value="0"> <b id="minAmpTxt">0.00</b></label>
+        <label title="Si el pianista usó pedal, la nota suena más de lo que se presionó la tecla"><input type="checkbox" id="comoSuena" checked> Largo de las barras: como suena la nota (incluye pedal)</label>
       </div>
     </details>
-    <span id="cuentaAudio" style="color:#aaa"></span>
-    <button id="btnDescargar">💾 Descargar como MIDI</button>
+    <span id="cuentaAudio"></span>
+    <button class="boton" id="btnDescargar">Descargar como MIDI</button>
   </div>
 </div>
 
-<div class="card fila">
-  <select id="modo">
-    <option value="espera">Modo espera (no avanza si no tocas)</option>
-    <option value="continuo">Modo continuo (con ritmo)</option>
-    <option value="escuchar">🔊 Modo escuchar (la app toca sola)</option>
-  </select>
-  <select id="dificultad" title="Simplifica cualquier canción cargada">
-    <option value="principiante" selected>Dificultad: Principiante</option>
-    <option value="intermedio">Dificultad: Intermedio</option>
-    <option value="avanzado">Dificultad: Avanzado (todas las notas)</option>
-  </select>
-  <select id="manos">
-    <option value="ambas">Ambas manos</option>
-    <option value="R">Solo mano derecha</option>
-    <option value="L">Solo mano izquierda</option>
-  </select>
-  <label>Velocidad <input type="range" id="vel" min="25" max="150" step="5" value="70"> <b id="velTxt">70%</b></label>
-  <button class="prim" id="btnEmpezar">▶ Empezar</button>
-  <button id="btnPausa">⏸ Pausa</button>
-</div>
-
-<div class="card">
-  <div class="fila" style="justify-content:space-between">
-    <div><span class="ley" style="background:var(--der)"></span>Derecha &nbsp; <span class="ley" style="background:var(--izq)"></span>Izquierda</div>
-    <div>Errores: <b id="errores">0</b> · Soltaste antes: <b id="cortas">0</b> · Perdidas: <b id="perdidas">0</b></div>
+<main class="escenario" aria-label="Práctica">
+  <div class="escenario-top">
+    <div id="objetivo" aria-live="polite">Elige una canción y toca ▶</div>
+    <div class="marcador">
+      <span>Errores<b id="errores">0</b></span>
+      <span>Soltaste antes<b id="cortas">0</b></span>
+      <span>Perdidas<b id="perdidas">0</b></span>
+    </div>
   </div>
-  <div id="objetivo">Elige una canción y aprieta Empezar</div>
-  <div id="barra"><div></div></div>
+  <div class="manos-leyenda"><span><span class="ley" style="background:var(--der)"></span> Mano derecha</span><span><span class="ley" style="background:var(--izq)"></span> Mano izquierda</span></div>
   <div id="escena">
     <canvas id="lienzo"></canvas>
     <div id="piano"></div>
   </div>
+
+  <div class="transporte">
+    <button class="play" id="btnEmpezar" aria-label="Tocar">▶</button>
+    <button class="icono" id="btnPausa" title="Volver al inicio" aria-label="Volver al inicio">⟲</button>
+    <span class="reloj" id="tActual">0:00</span>
+    <div class="linea">
+      <input type="range" id="tiempo" min="0" max="1000" step="1" value="0" aria-label="Posición en la canción">
+      <div id="tramoAB" hidden></div>
+    </div>
+    <span class="reloj" id="tTotal">0:00</span>
+    <div class="ab" role="group" aria-label="Repetir una parte">
+      <button class="boton" id="btnA" title="Marca dónde empieza la parte que quieres repetir">Repetir desde aquí</button>
+      <button class="boton" id="btnB" title="Marca dónde termina la parte que quieres repetir" disabled>…hasta aquí</button>
+      <button class="icono" id="btnQuitarAB" title="Dejar de repetir" aria-label="Dejar de repetir" hidden>✕</button>
+    </div>
+  </div>
+
+  <div class="controles">
+    <div class="grupo"><span class="rotulo" id="rModo">Modo</span><div class="segmentado" data-para="modo" role="group" aria-labelledby="rModo"></div></div>
+    <div class="grupo"><span class="rotulo" id="rDif">Dificultad</span><div class="segmentado" data-para="dificultad" role="group" aria-labelledby="rDif"></div></div>
+    <div class="grupo"><span class="rotulo" id="rManos">Manos</span><div class="segmentado" data-para="manos" role="group" aria-labelledby="rManos"></div></div>
+    <div class="grupo"><label class="rotulo" for="vel">Velocidad <b id="velTxt">70%</b></label><input type="range" id="vel" min="25" max="150" step="5" value="70"></div>
+  </div>
+  <div class="atajos"><kbd>Espacio</kbd> tocar o pausar · <kbd>←</kbd> <kbd>→</kbd> retroceder o avanzar 5 segundos · Sin teclado conectado, prueba con <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>G</kbd> <kbd>H</kbd> <kbd>J</kbd> <kbd>K</kbd></div>
+
+  <!-- Los selectores reales: los botones de arriba los controlan -->
+  <div hidden>
+    <select id="modo">
+      <option value="espera" title="La canción espera a que toques la nota correcta">Esperar mis notas</option>
+      <option value="continuo" title="La canción avanza con su ritmo">Con ritmo</option>
+      <option value="escuchar" title="La app toca la canción sola">Solo escuchar</option>
+    </select>
+    <select id="dificultad">
+      <option value="principiante" selected title="Una nota por mano">Principiante</option>
+      <option value="intermedio" title="Hasta dos notas por mano">Intermedio</option>
+      <option value="avanzado" title="Todas las notas">Avanzado</option>
+    </select>
+    <select id="manos">
+      <option value="ambas">Dos manos</option>
+      <option value="R">Derecha</option>
+      <option value="L">Izquierda</option>
+    </select>
+  </div>
+</main>
+
 </div>
+
+<div class="velo" id="velo" hidden></div>
+<aside class="panel-ajustes" id="ajustes" hidden aria-label="Ajustes">
+  <button class="icono cerrar" id="btnCerrarAjustes" aria-label="Cerrar ajustes">✕</button>
+  <h2>Ajustes</h2>
+
+  <h3>Tu teclado</h3>
+  <p id="estado">Buscando teclado...</p>
+  <button class="boton" id="btnCal">Calibrar rango</button>
+  <p>Aprieta Calibrar, toca la tecla más grave y la más aguda de tu teclado, y luego Listo. El piano de la pantalla quedará igual al tuyo.</p>
+
+  <h3>Sonido</h3>
+  <label><input type="checkbox" id="sonido"> Que suene también en el PC</label>
+  <label>Volumen <input type="range" id="volumen" min="-30" max="6" step="1" value="-6"></label>
+  <label><input type="checkbox" id="soloPC"> Que suene solo en el PC (silenciar el teclado)</label>
+  <div class="prueba-silencio" id="pruebaSilencio" hidden>
+    <p id="pruebaTxt">Toca unas teclas. ¿Tu teclado todavía suena?</p>
+    <div class="fila-botones">
+      <button class="boton" id="btnSigueSonando">Sí, todavía suena</button>
+      <button class="boton" id="btnYaNoSuena">Ya no suena</button>
+    </div>
+  </div>
+  <p id="ayudaSilencio">Le pide a tu teclado que no haga sonar sus propias teclas, y lo vuelve a activar al cerrar la app. Si algún día queda mudo sin la app abierta, apágalo y préndelo.</p>
+  <p id="retraso">Retraso del sonido del PC: se mide cuando empieza a sonar.</p>
+
+  <h3>Canciones desde audio</h3>
+  <label id="opSeparar" hidden title="Quita voz, batería, guitarra y bajo antes de convertir"><input type="checkbox" id="separarPiano" checked> Separar el piano antes de detectar las notas</label>
+  <select id="calidadSep" hidden title="La máxima calidad tarda bastante más la primera vez; después la canción queda guardada" aria-label="Calidad de la separación">
+    <option value="maxima">Separación: máxima calidad (lenta)</option>
+    <option value="rapida">Separación: rápida</option>
+  </select>
+  <p id="conMotor" hidden>La máxima calidad tarda más la primera vez. Después, la canción queda guardada y abre al instante.</p>
+  <p id="sinMotor">Para separar el piano y detectar notas con la mejor calidad, abre Teclamigo desde la terminal con <kbd>python teclamigo.py</kbd>.</p>
+</aside>
 
 <script>
 // ===== Utilidades de notas =====
 const ES = ['Do','Do#','Re','Re#','Mi','Fa','Fa#','Sol','Sol#','La','La#','Si'];
 const nombre = n => ES[n % 12] + (Math.floor(n / 12) - 1);
 const esNegra = n => [1,3,6,8,10].includes(n % 12);
-const COLOR = { R:'#66bb6a', L:'#ab47bc' };
+const COLOR = { R:'#E9B44C', L:'#6EA8E0' };   // bronce (derecha) y azul acero (izquierda)
 const $ = id => document.getElementById(id);
 
 // ===== Biblioteca: canciones de dominio público (arreglos simples a dos manos) =====
@@ -250,7 +426,7 @@ function cargarNotas() {
     // En una partitura con dos pentagramas las manos ya vienen dadas: no se recortan
     lista = simplificar(lista, midiCargado.esPartitura && l !== 'auto');
   } else if ($('cancion').value === 'audio' && notasAudio) {
-    lista = simplificar(filtrarAudio());
+    lista = aplicarSonido(simplificar(filtrarAudio()));
   } else {
     lista = simplificar(CANCIONES[$('cancion').value](), true);
   }
@@ -263,12 +439,14 @@ function empezar() {
   cargarNotas();
   t = 0; errores = cortas = perdidas = 0;
   ['errores','cortas','perdidas'].forEach(id => $(id).textContent = 0);
-  jugando = true; pausado = false; $('btnPausa').textContent = '⏸ Pausa';
+  jugando = true; pausado = false;
   activarAudio();
+  actualizarPlay();
 }
 
 function terminar() {
   jugando = false;
+  actualizarPlay();
   if (escuchando()) { $('objetivo').innerHTML = '<span class="final">🎵 Fin de la canción.</span> Cambia a modo espera para practicarla.'; return; }
   const total = notas.filter(practica).length;
   $('objetivo').innerHTML = `<span class="final">¡Terminaste! 🎉</span> ${total} notas · ${errores} errores · ${cortas} soltadas antes · ${perdidas} perdidas`;
@@ -296,9 +474,10 @@ function paso(ahora) {
       }
     }
     t = nt;
-    $('barra').firstElementChild.style.width = Math.min(100, t / fin * 100) + '%';
-    if (t >= fin) terminar();
+    if (repA !== null && repB !== null && t - INICIO >= repB) irA(repA);   // repetir la parte marcada
+    else if (t >= fin) terminar();
   }
+  actualizarTiempo();
   dibujar();
   actualizarTeclas();
 }
@@ -317,36 +496,53 @@ function rect(x, y, w, h, r) {
   g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
 }
 
+const FUENTE_CANVAS = "'Atkinson Hyperlegible', system-ui, sans-serif";
 function dibujar() {
   const W = cv.clientWidth, H = cv.clientHeight, pps = H / VISTA;
   g.clearRect(0, 0, W, H);
-  // guías en cada Do
-  g.strokeStyle = '#222';
+  // fondo: laca con una luz cálida que baja hacia el teclado
+  const fondo = g.createLinearGradient(0, 0, 0, H);
+  fondo.addColorStop(0, '#120f0c'); fondo.addColorStop(1, '#1d1712');
+  g.fillStyle = fondo; g.fillRect(0, 0, W, H);
+  // guías: una línea en cada Do, con su nombre arriba
+  g.strokeStyle = 'rgba(233,180,76,.09)'; g.lineWidth = 1;
+  g.fillStyle = 'rgba(233,180,76,.35)'; g.font = `10px ${FUENTE_CANVAS}`; g.textAlign = 'left';
   for (let n = rangoMin; n <= rangoMax; n++) if (n % 12 === 0 && pos[n]) {
-    g.beginPath(); g.moveTo(pos[n].x * W, 0); g.lineTo(pos[n].x * W, H); g.stroke();
+    const x = Math.round(pos[n].x * W) + .5;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+    g.fillText(nombre(n), x + 3, 12);
   }
   for (const n of notas) {
     if (n.start > t + VISTA) break;
     if (n.start + n.dur < t - 0.3 || !pos[n.midi]) continue;
-    const x = pos[n.midi].x * W + 1, w = pos[n.midi].w * W - 2;
-    const yb = H - (n.start - t) * pps, yt = H - (n.start + n.dur - t) * pps;
-    g.globalAlpha = escuchando() ? 1 : !practica(n) ? 0.3 : (n.hit ? 0.55 : 1);
-    g.fillStyle = COLOR[n.hand];
-    rect(x, yt, w, Math.max(4, yb - yt), 4); g.fill();
-    if (n.corta || n.perdida) { g.strokeStyle = '#ef5350'; g.lineWidth = 2; g.stroke(); g.lineWidth = 1; }
-    if (yb - yt > 16 && w > 12) {
-      g.fillStyle = '#000'; g.font = 'bold 10px system-ui'; g.textAlign = 'center';
+    const x = pos[n.midi].x * W + 1.5, w = pos[n.midi].w * W - 3;
+    const yb = H - (n.start - t) * pps, yt = H - (n.start + n.dur - t) * pps, h = Math.max(5, yb - yt);
+    const activa = n.start <= t + 0.05 && t < n.start + n.dur;
+    g.globalAlpha = escuchando() ? 1 : !practica(n) ? 0.28 : (n.hit && !activa ? 0.45 : 1);
+    const base = COLOR[n.hand];
+    const grad = g.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, base); grad.addColorStop(.5, n.hand === 'R' ? '#f6d48c' : '#a7cbef'); grad.addColorStop(1, base);
+    if (activa) { g.shadowColor = base; g.shadowBlur = 16; }
+    g.fillStyle = grad;
+    rect(x, yt, w, h, Math.min(6, w / 3)); g.fill();
+    g.shadowBlur = 0;
+    if (n.corta || n.perdida) { g.strokeStyle = '#D0574B'; g.lineWidth = 2; g.stroke(); g.lineWidth = 1; }
+    if (h > 16 && w > 12) {
+      g.fillStyle = '#17130F'; g.font = `bold 10px ${FUENTE_CANVAS}`; g.textAlign = 'center';
       g.fillText(nombre(n.midi).replace(/\d/, ''), x + w / 2, yb - 5);
     }
-    if (n.dedo && yb - yt > 30 && w > 10) {          // dedo a usar, en un círculo arriba de la barra
+    if (n.dedo && h > 30 && w > 10) {                 // dedo a usar, en un círculo arriba de la barra
       const cy = yt + 11, r = Math.min(8, w / 2 - 1);
-      g.fillStyle = '#fff'; g.beginPath(); g.arc(x + w / 2, cy, r, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#000'; g.font = 'bold 10px system-ui'; g.textAlign = 'center';
+      g.fillStyle = '#F3EBDD'; g.beginPath(); g.arc(x + w / 2, cy, r, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#17130F'; g.font = `bold 10px ${FUENTE_CANVAS}`; g.textAlign = 'center';
       g.fillText(n.dedo, x + w / 2, cy + 3.5);
     }
   }
   g.globalAlpha = 1;
-  g.fillStyle = '#fff'; g.fillRect(0, H - 2, W, 2);
+  // línea de golpe: un riel de bronce
+  const riel = g.createLinearGradient(0, H - 4, 0, H);
+  riel.addColorStop(0, 'rgba(233,180,76,0)'); riel.addColorStop(1, 'rgba(233,180,76,.9)');
+  g.fillStyle = riel; g.fillRect(0, H - 4, W, 4);
 }
 
 // ===== Teclas a tocar ahora =====
@@ -384,9 +580,21 @@ function notaOn(m, vel = 0.7) {
   }
 }
 
+let pedalTeclado = false;
+const soltadasConPedal = new Set();
+function pedalCambio(abajo) {
+  pedalTeclado = abajo;
+  if (!abajo) { soltadasConPedal.forEach(m => soltarNota(m)); soltadasConPedal.clear(); }
+}
+
 function notaOff(m) {
   sonarOff(m);
   const k = tecla(m); if (k) k.classList.remove('apretada');
+  if (pedalTeclado) { soltadasConPedal.add(m); return; }   // con pedal la nota sigue sonando
+  soltarNota(m);
+}
+
+function soltarNota(m) {
   for (const n of notas) {
     if (n.midi === m && n.held && !n.auto) {
       n.held = false; ultimasMetas = '';
@@ -399,6 +607,10 @@ function notaOff(m) {
 // ===== Sonido: piano real (muestras Salamander Grand Piano) =====
 let piano = null, pianoListo = false, actx = null;
 const sonando = {};
+// Tone.js viene con 0,1 s de "anticipación" (pensado para música programada): al tocar en vivo
+// eso se siente como retraso. Se deja en 0 y las notas en vivo usan Tone.immediate().
+if (window.Tone) { try { Tone.context.lookAhead = 0; } catch (e) {} }
+const ahora = () => (window.Tone ? Tone.immediate() : undefined);
 try {
   const urls = {};
   ['A0','C1','D#1','F#1','A1','C2','D#2','F#2','A2','C3','D#3','F#3','A3','C4','D#4','F#4','A4',
@@ -406,12 +618,46 @@ try {
     .forEach(n => urls[n] = n.replace('#', 's') + '.mp3');
   piano = new Tone.Sampler({
     urls, release: 1, baseUrl: 'https://tonejs.github.io/audio/salamander/',
-    onload: () => { pianoListo = true; $('actividad').textContent += ' · 🎹 Piano cargado'; }
+    onload: () => { recortarInicio(); pianoListo = true; $('actividad').textContent += ' · 🎹 Piano cargado'; }
   }).toDestination();
 } catch (e) { console.warn('Sin piano, se usa sonido simple', e); }
 
+// Cada muestra trae unos 8 ms de silencio antes del golpe del martillo (hasta 20 ms en los graves).
+// Se recortan (dejando 1 ms) para que la nota suene apenas aprietas la tecla.
+function recortarInicio() {
+  try {
+    for (const tb of piano._buffers._buffers.values()) {
+      const ab = tb.get(); if (!ab) continue;
+      const x = ab.getChannelData(0), sr = ab.sampleRate, lim = Math.min(x.length, sr);
+      let pico = 0; for (let i = 0; i < lim; i++) pico = Math.max(pico, Math.abs(x[i]));
+      let ini = 0; while (ini < lim && Math.abs(x[ini]) <= pico * 0.01) ini++;
+      ini = Math.max(0, ini - Math.round(sr * 0.001));
+      if (ini < sr * 0.002 || ini >= lim) continue;
+      const nuevo = new AudioBuffer({ length: ab.length - ini, numberOfChannels: ab.numberOfChannels, sampleRate: sr });
+      const fundido = Math.round(sr * 0.001);
+      for (let c = 0; c < ab.numberOfChannels; c++) {
+        const o = nuevo.getChannelData(c);
+        o.set(ab.getChannelData(c).subarray(ini));
+        for (let i = 0; i < fundido; i++) o[i] *= i / fundido;
+      }
+      tb.set(nuevo);
+    }
+  } catch (e) { console.warn('No se pudo recortar el inicio de las muestras', e); }
+}
+
 const notaTexto = n => Tone.Frequency(n, 'midi').toNote();  // solo se usa con el piano cargado
-async function activarAudio() { try { await Tone.start(); } catch (e) {} }
+async function activarAudio() { try { await Tone.start(); } catch (e) {} mostrarRetraso(); }
+
+// Retraso del sonido del PC (lo que tarda en salir por los parlantes o audífonos)
+function mostrarRetraso() {
+  const c = window.Tone ? Tone.context.rawContext : actx;
+  if (!c || c.state !== 'running') return;
+  const ms = Math.round(((c.baseLatency || 0) + (c.outputLatency || 0)) * 1000);
+  if (ms === mostrarRetraso.ms) return; mostrarRetraso.ms = ms;
+  $('retraso').textContent = ms > 0
+    ? `Retraso del sonido del PC: ~${ms} ms` + (ms > 60 ? '. Es alto: si usas audífonos o parlantes Bluetooth, prueba con unos con cable.' : ' (bien).')
+    : 'Retraso del sonido del PC: no se pudo medir.';
+}
 
 // Sonido de respaldo mientras carga el piano
 function osc(n, dur) {
@@ -425,25 +671,144 @@ function osc(n, dur) {
 // Nota con duración fija (canción sonando sola)
 function sonar(n, dur, forzar, vel = 0.7) {
   if (!forzar && !$('sonido').checked) return;
-  if (pianoListo) piano.triggerAttackRelease(notaTexto(n), Math.max(0.15, dur), undefined, vel);
+  if (pianoListo) piano.triggerAttackRelease(notaTexto(n), Math.max(0.15, dur), ahora(), vel);
   else osc(n, dur);
 }
 // Nota que suena mientras mantienes la tecla
 function sonarOn(n, vel) {
   if (!$('sonido').checked) return;
-  if (pianoListo) { piano.triggerAttack(notaTexto(n), undefined, vel); sonando[n] = true; }
+  if (pianoListo) { piano.triggerAttack(notaTexto(n), ahora(), vel); sonando[n] = true; }
   else osc(n, 0.6);
 }
 function sonarOff(n) {
-  if (sonando[n]) { piano.triggerRelease(notaTexto(n)); delete sonando[n]; }
+  if (sonando[n]) { piano.triggerRelease(notaTexto(n), ahora()); delete sonando[n]; }
 }
 $('volumen').oninput = () => { if (window.Tone) Tone.Destination.volume.value = +$('volumen').value; };
 if (window.Tone) Tone.Destination.volume.value = -6;
 
 // ===== Controles =====
 $('vel').oninput = () => $('velTxt').textContent = $('vel').value + '%';
-$('btnEmpezar').onclick = empezar;
-$('btnPausa').onclick = () => { if (!jugando) return; pausado = !pausado; $('btnPausa').textContent = pausado ? '▶ Seguir' : '⏸ Pausa'; };
+// ===== Reproducción: tocar/pausar, reiniciar, línea de tiempo y repetir A-B =====
+function actualizarPlay() {
+  const tocando = jugando && !pausado;
+  $('btnEmpezar').textContent = tocando ? '⏸' : '▶';
+  $('btnEmpezar').setAttribute('aria-label', tocando ? 'Pausar' : 'Tocar');
+}
+function tocarPausar() {
+  activarAudio();
+  if (!jugando) empezar(); else pausado = !pausado;
+  actualizarPlay();
+}
+$('btnEmpezar').onclick = tocarPausar;
+$('btnPausa').onclick = () => { empezar(); if (repA !== null) irA(repA); actualizarPlay(); };
+
+const largoCancion = () => Math.max(0.1, fin - INICIO);
+const reloj = s => { s = Math.max(0, Math.floor(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+let arrastrando = false, repA = null, repB = null;
+
+// Lleva la canción a un segundo dado. Las notas anteriores quedan como ya tocadas
+// (no cuentan como error) y las siguientes vuelven a estar pendientes.
+function irA(seg) {
+  if (!jugando) { empezar(); pausado = true; actualizarPlay(); }   // mover la línea con la canción detenida: queda en pausa ahí
+  seg = Math.min(Math.max(0, seg), largoCancion());
+  t = Math.max(0, INICIO + seg - 1);                  // un segundo antes, para ver venir las notas
+  for (const n of notas) {
+    if (n.start < t - 0.01) { n.hit = true; n.auto = true; n.held = false; }
+    else { n.hit = n.auto = n.held = n.corta = n.perdida = false; }
+  }
+  ultimasMetas = '';
+  actualizarTiempo(true);
+}
+function actualizarTiempo(forzar) {
+  const pos = Math.max(0, t - INICIO), total = largoCancion();
+  if (!arrastrando || forzar) {
+    const v = Math.round(Math.min(1, pos / total) * 1000);
+    $('tiempo').value = v;
+    $('tiempo').style.setProperty('--avance', (v / 10) + '%');
+  }
+  const a = reloj(pos), b = reloj(total);
+  if ($('tActual').textContent !== a) $('tActual').textContent = a;
+  if ($('tTotal').textContent !== b) $('tTotal').textContent = b;
+}
+$('tiempo').addEventListener('pointerdown', () => { arrastrando = true; });
+$('tiempo').addEventListener('input', () => {
+  const v = +$('tiempo').value;
+  $('tiempo').style.setProperty('--avance', (v / 10) + '%');
+  irA(v / 1000 * largoCancion());
+});
+['pointerup', 'change', 'blur'].forEach(ev => $('tiempo').addEventListener(ev, () => { arrastrando = false; }));
+
+function dibujarTramo() {
+  const tramo = $('tramoAB');
+  if (repA === null) { tramo.hidden = true; return; }
+  const total = largoCancion(), fa = repA / total, fb = (repB ?? repA) / total;
+  tramo.hidden = false;
+  tramo.style.left = (fa * 100) + '%';
+  tramo.style.width = Math.max(0.4, (fb - fa) * 100) + '%';
+}
+$('btnA').onclick = () => {
+  if (!jugando) empezar(), pausado = true, actualizarPlay();
+  repA = Math.max(0, t - INICIO); repB = null;
+  $('btnA').classList.add('puesto'); $('btnB').disabled = false; $('btnB').classList.remove('puesto');
+  $('btnQuitarAB').hidden = false; dibujarTramo();
+};
+$('btnB').onclick = () => {
+  const aqui = Math.max(0, t - INICIO);
+  if (repA === null || aqui < repA + 1) return;       // al menos un segundo de canción
+  repB = aqui; $('btnB').classList.add('puesto'); dibujarTramo();
+  irA(repA);
+};
+$('btnQuitarAB').onclick = () => {
+  repA = repB = null; dibujarTramo();
+  ['btnA', 'btnB'].forEach(id => $(id).classList.remove('puesto'));
+  $('btnB').disabled = true; $('btnQuitarAB').hidden = true;
+};
+
+// ===== Botones segmentados (controlan los selectores ocultos) =====
+document.querySelectorAll('.segmentado').forEach(cont => {
+  const sel = $(cont.dataset.para);
+  cont.innerHTML = [...sel.options].map(o =>
+    `<button type="button" data-v="${o.value}" title="${o.title || ''}">${o.textContent}</button>`).join('');
+  const marcar = () => cont.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === sel.value));
+  cont.onclick = e => {
+    const b = e.target.closest('button'); if (!b || b.dataset.v === sel.value) return;
+    sel.value = b.dataset.v; sel.dispatchEvent(new Event('change')); marcar();
+  };
+  sel.addEventListener('change', marcar);
+  marcar();
+});
+
+// Si cambias la dificultad o las manos a mitad de canción, sigue desde el mismo punto
+function recargarEnSuLugar() {
+  if (!jugando) { vistaPrevia(false); return; }
+  const seg = Math.max(0, t - INICIO + 1), estabaPausado = pausado;
+  cargarNotas(); irA(seg); pausado = estabaPausado; actualizarPlay();
+}
+$('dificultad').addEventListener('change', recargarEnSuLugar);
+$('manos').addEventListener('change', recargarEnSuLugar);
+
+// Al elegir una canción: se ve cómo empieza y cuánto dura, antes de tocar ▶
+function vistaPrevia(quitarRepeticion = true) {
+  try { cargarNotas(); } catch (e) { return; }
+  jugando = false; pausado = false; t = 0;
+  ultimasMetas = '';
+  document.querySelectorAll('.tecla').forEach(k => { k.classList.remove('meta-R', 'meta-L'); k.textContent = k.dataset.base; });
+  if (quitarRepeticion) $('btnQuitarAB').click(); else dibujarTramo();
+  actualizarTiempo(true); actualizarPlay();
+  $('objetivo').textContent = 'Toca ▶ cuando estés listo';
+}
+$('cancion').addEventListener('change', () => vistaPrevia());
+
+// ===== Panel de ajustes =====
+function abrirAjustes(abrir) {
+  $('ajustes').hidden = !abrir; $('velo').hidden = !abrir;
+  $('btnAjustes').setAttribute('aria-expanded', abrir);
+  (abrir ? $('btnCerrarAjustes') : $('btnAjustes')).focus();
+}
+$('btnAjustes').onclick = () => { abrirAjustes(true); activarAudio(); };
+$('btnCerrarAjustes').onclick = () => abrirAjustes(false);
+$('velo').onclick = () => abrirAjustes(false);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('ajustes').hidden) abrirAjustes(false); });
 
 $('btnCal').onclick = function () {
   if (!calibrando) {
@@ -463,7 +828,12 @@ $('btnCal').onclick = function () {
 // Teclado del PC para probar: A S D F G H J K (W E T Y U = negras), espacio = pausa
 const MAPA = { a:60, w:61, s:62, e:63, d:64, f:65, t:66, g:67, y:68, h:69, u:70, j:71, k:72 };
 document.addEventListener('keydown', e => {
-  if (e.code === 'Space') { e.preventDefault(); $('btnPausa').click(); return; }
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== 'range') return;
+  if (e.code === 'Space') { e.preventDefault(); tocarPausar(); return; }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    if (e.target.id === 'tiempo') return;                 // la línea de tiempo ya maneja sus flechas
+    e.preventDefault(); irA(Math.max(0, t - INICIO) + (e.key === 'ArrowRight' ? 5 : -5)); return;
+  }
   if (!e.repeat && MAPA[e.key]) notaOn(MAPA[e.key]);
 });
 document.addEventListener('keyup', e => { if (MAPA[e.key]) notaOff(MAPA[e.key]); });
@@ -485,14 +855,24 @@ async function abrirArchivo(f) {
     else if (cab.startsWith('PK')) await cargarMxl(buf, titulo);
     else if (inicioTexto.startsWith('<')) cargarPartitura(new TextDecoder().decode(buf), titulo);
     else await convertirAudio(buf, titulo);
+    if ($('cancion').value !== 'audio' || notasAudio) vistaPrevia();
     irAlJuego();
   } catch (err) { alert(err.message); }
 }
 
 // ===== Bienvenida: arrastrar, elegir archivo y biblioteca =====
-const COLOR_NIVEL = { 'Muy fácil': '#a5d6a7', 'Fácil': '#81d4fa', 'Intermedio': '#ffe082', 'Desafío': '#ef9a9a' };
+const COLOR_NIVEL = { 'Muy fácil': '#B9D7A8', 'Fácil': '#A9CBEB', 'Intermedio': '#E9C77E', 'Desafío': '#E39A90' };
+// Al elegir canción, la sección de elegir se pliega para dejar el escenario a la vista
+function plegarEstante(plegar) {
+  $('bienvenida').hidden = plegar;
+  $('btnOtra').hidden = !plegar;
+  $('btnOtra').setAttribute('aria-expanded', !plegar);
+}
+$('btnOtra').onclick = () => { plegarEstante(false); $('bienvenida').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+
 function irAlJuego() {
-  $('btnEmpezar').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  plegarEstante(true);
+  document.querySelector('.cancion-actual').scrollIntoView({ behavior: 'smooth', block: 'start' });
   $('btnEmpezar').classList.remove('latido'); void $('btnEmpezar').offsetWidth; $('btnEmpezar').classList.add('latido');
 }
 function marcarTarjeta(id) {
@@ -511,7 +891,7 @@ function armarBiblioteca() {
     </button>`).join('');
   document.querySelectorAll('.tarjeta').forEach(t => t.onclick = () => {
     $('cancion').value = t.dataset.id; $('pistas').hidden = true; $('conversion').hidden = true;
-    marcarTarjeta(t.dataset.id); irAlJuego();
+    marcarTarjeta(t.dataset.id); vistaPrevia(); irAlJuego();
   });
   sel.addEventListener('change', () => marcarTarjeta(sel.value));
 }
@@ -807,10 +1187,15 @@ function listoAudio(titulo) {
   opcionCancion('audio', '🎤 ' + titulo + ' (convertida)');
   $('pistas').hidden = true;
   $('opcAudio').hidden = false;
+  // Mínimos de duración/volumen: el motor de piano no los necesita (su limpieza ya lo decide);
+  // el detector simple del navegador sí.
+  const [dMin, aMin] = fuenteAudio === 'piano' ? [0.05, 0] : [0.1, 0.2];
+  $('minDur').value = dMin; $('minDurTxt').textContent = dMin.toFixed(2) + ' s';
+  $('minAmp').value = aMin; $('minAmpTxt').textContent = aMin.toFixed(2);
   $('convBarra').style.width = '100%';
   $('convTxt').textContent = fuenteAudio === 'piano'
-    ? '✅ Notas detectadas con el motor de piano. Elige la dificultad y aprieta Empezar.'
-    : '✅ Conversión lista (detector simple). Elige la dificultad y aprieta Empezar.';
+    ? '✅ Notas detectadas con el motor de piano. Elige la dificultad y toca ▶.'
+    : '✅ Conversión lista (detector simple). Elige la dificultad y toca ▶.';
   contarAudio();
 }
 const BP = 'https://cdn.jsdelivr.net/npm/@spotify/basic-pitch@1.0.1';
@@ -824,10 +1209,15 @@ async function convertirAudio(buf, titulo) {
       let r = null;
       try { r = await procesarEnServidor(buf, titulo, $('separarPiano').checked, msg); }
       catch (e) {
+        if (e.cancelado) {
+          $('convBarra').style.width = '0';
+          msg('Conversión cancelada. Si quieres algo más rápido, elige "Separación: rápida" en ⚙ Ajustes y vuelve a abrir la canción.');
+          return;
+        }
         if (!confirm('El motor de piano falló:\n' + e.message + '\n\n¿Usar el detector simple del navegador?')) throw e;
       }
       if (r) {
-        notasAudio = r.notas.map(n => ({ midi: n.midi, start: n.start, dur: n.dur, amp: n.vel / 127 }));
+        notasAudio = r.notas.map(n => ({ midi: n.midi, start: n.start, dur: n.tecla ?? n.dur, sonido: n.dur, amp: n.vel / 127 }));
         if (!notasAudio.length) throw new Error('No se detectaron notas de piano en esta canción.');
         fuenteAudio = 'piano';
         listoAudio(titulo);
@@ -963,6 +1353,22 @@ function asignarManos(l) {
 // ===== Dificultad =====
 // Principiante: 1 nota por mano (melodía arriba, bajo abajo y más espaciado)
 // Intermedio: hasta 2 notas por mano.  Avanzado: todo.
+// ===== Largo de las barras: cuánto suena cada nota =====
+// El motor entrega cuánto se presionó la tecla (dur) y cuánto suena (sonido, incluye pedal).
+// Las manos y la limpieza usan la tecla; la barra que cae muestra cuánto suena.
+// En Principiante (una nota por mano) la nota no se estira más allá de la siguiente de esa mano.
+function aplicarSonido(l) {
+  if (!$('comoSuena').checked) return l;
+  const out = l.map(n => n.sonido ? { ...n, dur: Math.max(n.dur, n.sonido) } : n);
+  if ($('dificultad').value === 'principiante')
+    for (const h of ['R', 'L']) {
+      const mano = out.filter(n => n.hand === h).sort((a, b) => a.start - b.start);
+      for (let i = 0; i < mano.length - 1; i++)
+        mano[i].dur = Math.max(0.08, Math.min(mano[i].dur, mano[i + 1].start - mano[i].start - 0.02));
+    }
+  return out;
+}
+
 // ===== Límites físicos de una mano =====
 const MAX_DEDOS = 5;        // notas a la vez por mano
 const MAX_ABERTURA = 12;    // una octava (en semitonos)
@@ -1060,40 +1466,51 @@ function simplificar(l, exacta = false) {
   return out;
 }
 
-// ===== Limpieza de notas del motor de piano =====
-// Quita lo que se "cuela" de otros instrumentos y las notas repetidas por error:
-//  1. Trozos: la misma nota que vuelve a empezar justo al terminar → se une con la anterior.
-//  2. Notas débiles: mucho más suaves que las notas cercanas (±0.75 s, ±1 octava) → son filtraciones.
-//  3. Fantasmas: notas muy cortas y suaves.
-const RELATIVO = { suave: 0.30, normal: 0.45, fuerte: 0.60 };
+// ===== Limpieza de notas del motor de piano (Transkun) =====
+// Valores ajustados con un banco de pruebas: piano real (muestras Salamander) solo y mezclado
+// con restos de voz, bajo y batería, midiendo nota por nota. Las notas falsas resultaron ser
+// cortas y más suaves que las notas reales cercanas.
+//  1. Fantasma: dura menos de "corta" segundos y es más suave que sus vecinas.
+//  2. Débil: mucho más suave que la nota más fuerte cercana (± "ventana" s, ±1 octava).
+// Las notas repetidas NO se unen: este detector separa bien las teclas que se repiten.
+// Resultado (cadena completa, F1 de inicio de nota): normal = 98.6% piano limpio,
+// 96.9% con restos leves, 89.4% con restos fuertes.
+const NIVELES_LIMPIEZA = {
+  suave:  { corta: 0.10, fantasma: 0.85, debil: 0.60, ventana: 1.0 },
+  normal: { corta: 0.12, fantasma: 0.90, debil: 0.70, ventana: 1.0 },
+  fuerte: { corta: 0.12, fantasma: 1.01, debil: 0.72, ventana: 1.0 },
+};
 function limpiarPiano(l, nivel) {
-  const rel = RELATIVO[nivel] ?? 0.45;
+  const c = NIVELES_LIMPIEZA[nivel] || NIVELES_LIMPIEZA.normal;
   const ord = [...l].sort((a, b) => a.start - b.start);
-
-  const unidas = [], ultima = {};
-  for (const n of ord) {
-    const p = ultima[n.midi];
-    const hueco = p ? n.start - (p.start + p.dur) : 9;
-    // Trozos de la misma nota: empieza justo cuando termina la anterior (sin pisarla),
-    // casi sin pausa, o con poca pausa y más suave
-    if (p && hueco > -0.02 && (hueco < 0.03 || (hueco < 0.06 && n.amp < p.amp * 0.8))) {
-      p.dur = Math.max(p.dur, n.start + n.dur - p.start);
-      continue;
-    }
-    const c = { ...n }; unidas.push(c); ultima[n.midi] = c;
-  }
-
-  const fuertes = [];
+  const out = [];
   let j0 = 0;
-  for (const n of unidas) {
-    while (unidas[j0].start < n.start - 0.75) j0++;
+  for (const n of ord) {
+    while (ord[j0].start < n.start - c.ventana) j0++;
     let max = 0;
-    for (let j = j0; j < unidas.length && unidas[j].start <= n.start + 0.75; j++)
-      if (Math.abs(unidas[j].midi - n.midi) <= 12) max = Math.max(max, unidas[j].amp);
-    if (n.amp >= max * rel) fuertes.push(n);
+    for (let j = j0; j < ord.length && ord[j].start <= n.start + c.ventana; j++)
+      if (Math.abs(ord[j].midi - n.midi) <= 12) max = Math.max(max, ord[j].amp);
+    if (n.dur < c.corta && n.amp < max * c.fantasma) continue;
+    if (n.amp < max * c.debil) continue;
+    out.push(n);
   }
+  return quitarDestellos(out);
+}
 
-  return fuertes.filter(n => !(n.dur < 0.08 && n.amp < 0.5));
+// Destellos: notas de menos de 0,1 s que empiezan junto con otras que duran al menos 4 veces más.
+// Revisando una canción real, la mayoría eran el "eco" de una nota del acorde (una octava o una
+// octava y quinta más arriba) que el detector oyó un instante.
+function quitarDestellos(l) {
+  const largo = n => Math.max(n.dur, n.sonido || 0);
+  const ord = [...l].sort((a, b) => a.start - b.start);
+  let j0 = 0;
+  return ord.filter(n => {
+    if (largo(n) >= 0.1) return true;
+    while (ord[j0].start < n.start - 0.05) j0++;
+    for (let j = j0; j < ord.length && ord[j].start <= n.start + 0.05; j++)
+      if (ord[j] !== n && largo(ord[j]) >= Math.max(0.3, 4 * largo(n))) return false;
+    return true;
+  });
 }
 
 function filtrarAudio() {
@@ -1111,6 +1528,7 @@ function contarAudio() {
 $('minDur').oninput = () => { $('minDurTxt').textContent = (+$('minDur').value).toFixed(2) + ' s'; contarAudio(); };
 $('minAmp').oninput = () => { $('minAmpTxt').textContent = (+$('minAmp').value).toFixed(2); contarAudio(); };
 $('dificultad').onchange = contarAudio;
+$('comoSuena').onchange = contarAudio;
 $('limpieza').onchange = () => {
   if (fuenteAudio === 'piano') return contarAudio();
   if (!bpFrames) return;
@@ -1123,12 +1541,12 @@ $('limpieza').onchange = () => {
 
 $('btnDescargar').onclick = () => {
   const m = new Midi();
-  const lista = simplificar(filtrarAudio());
+  const lista = aplicarSonido(simplificar(filtrarAudio()));
   ['R', 'L'].forEach(h => {
     const del = lista.filter(n => n.hand === h);
     if (!del.length) return;
     const tr = m.addTrack(); tr.name = h === 'R' ? 'Mano derecha' : 'Mano izquierda';
-    del.forEach(n => tr.addNote({ midi: n.midi, time: n.start, duration: n.dur, velocity: 0.8 }));
+    del.forEach(n => tr.addNote({ midi: n.midi, time: n.start, duration: n.dur, velocity: Math.min(1, Math.max(0.05, n.amp ?? 0.8)) }));
   });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([m.toArray()], { type: 'audio/midi' }));
@@ -1153,16 +1571,29 @@ async function procesarEnServidor(buf, titulo, separar, msg) {
     }
   }
   msg('Enviando la canción...');
-  const url = `/api/procesar?separar=${separar ? 1 : 0}&nombre=${encodeURIComponent(titulo)}`;
+  const url = `/api/procesar?separar=${separar ? 1 : 0}&calidad=${$('calidadSep').value}&nombre=${encodeURIComponent(titulo)}`;
   const { id } = await (await api(url, { method: 'POST', body: buf })).json();
   let t;
-  while (true) {
-    await esperar(1000);
-    t = await (await api('/api/trabajo?id=' + id)).json();
-    if (t.estado === 'listo') break;
-    if (t.estado === 'error') throw new Error(t.mensaje);
-    msg(`${t.etapa}... ${t.progreso}%  ${t.mensaje || '(no cierres la terminal)'}`);
-    $('convBarra').style.width = t.progreso + '%';
+  $('btnCancelar').hidden = false; $('btnCancelar').disabled = false;
+  $('btnCancelar').onclick = () => {
+    $('btnCancelar').disabled = true; msg('Cancelando...');
+    api('/api/cancelar?id=' + id, { method: 'POST' }).catch(() => {});
+  };
+  try {
+    while (true) {
+      await esperar(1000);
+      t = await (await api('/api/trabajo?id=' + id)).json();
+      if (t.estado === 'listo') break;
+      if (t.estado === 'error') {
+        const e = new Error(t.mensaje);
+        e.cancelado = t.mensaje === 'Cancelado';
+        throw e;
+      }
+      msg(`${t.etapa}... ${Math.floor(t.progreso)}%  ${t.mensaje || '(no cierres la terminal)'}`);
+      $('convBarra').style.width = t.progreso + '%';
+    }
+  } finally {
+    $('btnCancelar').hidden = true;
   }
   const r = await (await api('/api/resultado?id=' + id)).json();
   if (r.nivel !== null && r.nivel !== undefined && r.nivel < 2)
@@ -1176,10 +1607,114 @@ async function procesarEnServidor(buf, titulo, separar, msg) {
     const est = await (await fetch('/api/estado')).json();
     servidor = est.app === 'teclamigo';
     $('opSeparar').hidden = !servidor;
+    $('calidadSep').hidden = !servidor;
+    $('conMotor').hidden = !servidor; $('sinMotor').hidden = servidor;
+    try { const c = localStorage.getItem('calidadSep'); if (c) $('calidadSep').value = c; } catch (e) {}
+    $('calidadSep').onchange = () => { try { localStorage.setItem('calidadSep', $('calidadSep').value); } catch (e) {} };
   } catch (e) {}
 })();
 
 // MIDI del teclado
+// ===== Silenciar el teclado =====
+// Cada marca de teclado entiende órdenes distintas, así que se prueban de a una:
+//  paso 1: "Local Control" apagado (control 122) + volumen de cada canal en 0 (controles 7 y 11)
+//  paso 2: volumen general del teclado en 0 ("Master Volume" de MIDI general; Chrome pide permiso)
+// Si ninguna sirve, el teclado no acepta órdenes del PC y queda la solución física.
+let accesoMidi = null, accesoSysex = null, pasoSilencio = 1;
+const SILENCIO_FISICO = 'Tu teclado no deja que lo silencien desde el PC. Dos soluciones: conecta unos audífonos (o solo su enchufe) en la entrada PHONES del teclado, así sus parlantes se apagan solos; o baja su volumen al mínimo. En los dos casos las notas igual llegan al PC.';
+const SILENCIO_NORMAL = $('ayudaSilencio').textContent;
+// Salidas MIDI hacia teclados reales (Windows agrega un sintetizador propio que no cuenta)
+const salidasTeclado = () => accesoMidi ? [...accesoMidi.outputs.values()].filter(o => !/wavetable/i.test(o.name || '')) : [];
+function enviar(acceso, msg) {
+  if (!acceso) return;
+  for (const salida of acceso.outputs.values()) try { salida.send(msg); } catch (e) {}
+}
+function silenciarTeclado(silenciar) {
+  for (let c = 0; c < 16; c++) {
+    enviar(accesoMidi, [0xB0 | c, 122, silenciar ? 0 : 127]);   // Local Control
+    enviar(accesoMidi, [0xB0 | c, 7, silenciar ? 0 : 100]);     // volumen del canal (100 = normal)
+    enviar(accesoMidi, [0xB0 | c, 11, silenciar ? 0 : 127]);    // expresión
+  }
+  const v = silenciar ? 0 : 0x7F;
+  enviar(accesoSysex, [0xF0, 0x7F, 0x7F, 0x04, 0x01, v, v, 0xF7]);  // volumen general
+}
+function guardar(clave, valor) { try { localStorage.setItem(clave, valor); } catch (e) {} }
+function leer(clave) { try { return localStorage.getItem(clave); } catch (e) { return null; } }
+function mostrarPrueba(texto) {
+  $('pruebaSilencio').hidden = !texto;
+  if (texto) $('pruebaTxt').textContent = texto;
+}
+function terminarSilencio(funciono) {
+  mostrarPrueba('');
+  if (funciono) {
+    guardar('silencio', String(pasoSilencio));
+    $('ayudaSilencio').textContent = 'Listo: tu teclado queda en silencio mientras uses la app y vuelve a sonar al cerrarla. Si algún día queda mudo sin la app abierta, apágalo y préndelo.';
+  } else {
+    guardar('silencio', 'fisico');
+    silenciarTeclado(false);
+    $('soloPC').checked = false; guardar('soloPC', '0');
+    $('ayudaSilencio').textContent = SILENCIO_FISICO;
+  }
+}
+async function pedirSysex(conPermiso) {
+  if (accesoSysex || !navigator.requestMIDIAccess) return !!accesoSysex;
+  try {
+    if (!conPermiso) {   // al abrir la app, solo si el permiso ya estaba dado (sin preguntar)
+      const est = await navigator.permissions.query({ name: 'midi', sysex: true });
+      if (est.state !== 'granted') return false;
+    }
+    accesoSysex = await navigator.requestMIDIAccess({ sysex: true });
+    return true;
+  } catch (e) { return false; }
+}
+try { $('soloPC').checked = leer('soloPC') === '1'; } catch (e) {}
+if ($('soloPC').checked) $('sonido').checked = true;
+if (leer('silencio') === 'fisico') $('ayudaSilencio').textContent = SILENCIO_FISICO;
+$('soloPC').onchange = () => {
+  const solo = $('soloPC').checked;
+  guardar('soloPC', solo ? '1' : '0');
+  activarAudio();
+  if (!solo) { silenciarTeclado(false); mostrarPrueba(''); $('ayudaSilencio').textContent = SILENCIO_NORMAL; return; }
+  $('sonido').checked = true;
+  if (!accesoMidi) {
+    $('soloPC').checked = false; guardar('soloPC', '0');
+    $('ayudaSilencio').textContent = 'Primero conecta tu teclado por USB (y abre la app en Chrome o Edge).';
+    return;
+  }
+  if (!salidasTeclado().length) {   // el teclado solo envía notas: no recibe órdenes
+    mostrarPrueba(''); $('soloPC').checked = false; guardar('soloPC', '0');
+    $('ayudaSilencio').textContent = 'Tu teclado no recibe órdenes del PC (solo envía notas). ' + SILENCIO_FISICO.replace('Tu teclado no deja que lo silencien desde el PC. ', '');
+    return;
+  }
+  pasoSilencio = 1; silenciarTeclado(true);
+  mostrarPrueba('Toca unas teclas. ¿Tu teclado todavía suena?');
+};
+$('btnYaNoSuena').onclick = () => terminarSilencio(true);
+$('btnSigueSonando').onclick = async () => {
+  if (pasoSilencio === 1) {
+    pasoSilencio = 2;
+    mostrarPrueba('Probando otra forma... Si Chrome te pide permiso para controlar tus dispositivos MIDI, acéptalo.');
+    if (!(await pedirSysex(true))) return terminarSilencio(false);
+    silenciarTeclado(true);
+    mostrarPrueba('Toca unas teclas otra vez. ¿Tu teclado todavía suena?');
+  } else terminarSilencio(false);
+};
+// Si apagas el sonido del PC, el teclado vuelve a sonar (si no, no se escucharía nada)
+$('sonido').addEventListener('change', () => {
+  if (!$('sonido').checked && $('soloPC').checked) {
+    $('soloPC').checked = false; guardar('soloPC', '0');
+    silenciarTeclado(false); mostrarPrueba('');
+  }
+});
+// Al cerrar la app, el teclado vuelve a sonar solo
+window.addEventListener('pagehide', () => { if ($('soloPC').checked) silenciarTeclado(false); });
+window.addEventListener('pageshow', e => { if (e.persisted && $('soloPC').checked) silenciarTeclado(true); });
+async function reaplicarSilencio() {
+  if (!$('soloPC').checked) return;
+  if (leer('silencio') === '2') await pedirSysex(false);
+  silenciarTeclado(true);
+}
+
 if (navigator.requestMIDIAccess) {
   navigator.requestMIDIAccess().then(midi => {
     const conectar = () => {
@@ -1189,17 +1724,21 @@ if (navigator.requestMIDIAccess) {
         : 'No se detecta teclado. Puedes probar con A S D F G H J K del PC.';
       ins.forEach(i => i.onmidimessage = ev => {
         const [st, n, v] = ev.data, tipo = st & 0xF0;
+        // primero el sonido (lo más urgente), después la pantalla
+        if (tipo === 0x90 && v > 0) notaOn(n, v / 127);
+        else if (tipo === 0x80 || (tipo === 0x90 && v === 0)) notaOff(n);
+        else if (tipo === 0xB0 && n === 64) pedalCambio(v >= 64);   // pedal de sostenido
         if (tipo === 0x90 || tipo === 0x80) {
           const act = $('actividad');
           act.textContent = `🎹 Recibido: ${nombre(n)} ${tipo === 0x90 && v > 0 ? '↓' : '↑'} (${i.name})`;
-          act.style.background = '#2e7d32';
-          clearTimeout(act._t); act._t = setTimeout(() => act.style.background = '#2c2c2c', 300);
+          act.style.background = '#5a4720';
+          clearTimeout(act._t); act._t = setTimeout(() => act.style.background = '', 300);
         }
-        if (tipo === 0x90 && v > 0) notaOn(n, v / 127);
-        else if (tipo === 0x80 || (tipo === 0x90 && v === 0)) notaOff(n);
       });
     };
-    conectar(); midi.onstatechange = conectar;
+    accesoMidi = midi;
+    conectar(); midi.onstatechange = () => { conectar(); reaplicarSilencio(); };
+    reaplicarSilencio();
   }).catch(() => $('estado').textContent = 'Permiso MIDI denegado.');
 } else {
   $('estado').textContent = 'Usa Chrome o Edge para conectar el teclado.';
@@ -1207,6 +1746,8 @@ if (navigator.requestMIDIAccess) {
 
 dibujarPiano();
 ajustarCanvas();
+vistaPrevia();
+$('objetivo').textContent = 'Elige una canción y toca ▶';
 requestAnimationFrame(frame);
 </script>
 </body>
