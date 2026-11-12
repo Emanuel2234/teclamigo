@@ -9,6 +9,20 @@
 <style>
   :root { --bg:#111; --card:#1e1e1e; --txt:#eee; --der:#66bb6a; --izq:#ab47bc; --rojo:#ef5350; --amar:#fff176; --azul:#4fc3f7; }
   * { box-sizing:border-box; }
+  .zona { border:2px dashed #555; border-radius:12px; padding:22px 14px; text-align:center; cursor:pointer; transition:.15s; }
+  .zona:hover, .zona.encima { border-color:var(--azul); background:#1a2a33; }
+  .zona .grande { font-size:1.35rem; font-weight:bold; margin:4px 0; }
+  .zona .chico { color:#aaa; font-size:.9rem; }
+  .biblio { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:8px; margin-top:8px; }
+  .tarjeta { background:#2a2a2a; border:1px solid #3a3a3a; border-radius:8px; padding:9px 10px; cursor:pointer; text-align:left; color:var(--txt); font:inherit; }
+  .tarjeta:hover { border-color:var(--azul); }
+  .tarjeta.activa { border-color:var(--der); background:#22301f; }
+  .tarjeta b { display:block; font-size:.95rem; }
+  .tarjeta span { color:#aaa; font-size:.8rem; }
+  .tarjeta .nivel { color:#000 !important; }
+  .nivel { display:inline-block; font-size:.72rem; padding:1px 6px; border-radius:9px; margin-top:4px; color:#000; font-weight:bold; }
+  .latido { animation:latido 1s ease-in-out 3; }
+  @keyframes latido { 50% { transform:scale(1.08); box-shadow:0 0 0 4px #4fc3f755; } }
   body { font-family:system-ui,sans-serif; background:var(--bg); color:var(--txt); margin:0; padding:14px; }
   h1 { font-size:1.3rem; margin:0 0 8px; }
   .fila { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
@@ -36,6 +50,16 @@
 <body>
 <h1>🎹 Teclamigo</h1>
 
+<div class="card" id="bienvenida">
+  <div class="zona" id="zona">
+    <div style="font-size:2rem">🎵</div>
+    <div class="grande">Arrastra aquí tu canción</div>
+    <div class="chico">o haz clic para elegirla · MP3 o WAV · MIDI · partitura (MusicXML)</div>
+  </div>
+  <div style="margin-top:12px;color:#aaa">…o practica con una canción de la biblioteca:</div>
+  <div class="biblio" id="biblio"></div>
+</div>
+
 <div class="card fila">
   <span id="estado">Buscando teclado...</span>
   <span id="actividad" style="font-size:.85rem;padding:3px 8px;border-radius:5px;background:#2c2c2c">🎹 Sin señal del teclado todavía</span>
@@ -45,11 +69,8 @@
 </div>
 
 <div class="card fila">
-  <select id="cancion">
-    <option value="estrellita">Estrellita ¿dónde estás?</option>
-    <option value="himno">Himno a la Alegría</option>
-  </select>
-  <label class="btnfile">📂 Cargar canción (MIDI, WAV o MP3)<input type="file" id="archivo" accept=".mid,.midi,.wav,.mp3,.ogg,.m4a,audio/*" hidden></label>
+  <select id="cancion"></select>
+  <label class="btnfile">📂 Cargar canción (partitura, MIDI o audio)<input type="file" id="archivo" accept=".musicxml,.mxl,.xml,.mid,.midi,.wav,.mp3,.ogg,.m4a,audio/*" hidden></label>
   <label id="opSeparar" hidden title="Quita voz, batería, guitarra y bajo antes de convertir"><input type="checkbox" id="separarPiano" checked> 🎹 Separar el piano antes de detectar notas (recomendado si la canción tiene voz)</label>
   <span id="pistas" hidden>
     <span class="ley" style="background:var(--der)"></span><select id="pistaDer"></select>
@@ -121,36 +142,58 @@ const esNegra = n => [1,3,6,8,10].includes(n % 12);
 const COLOR = { R:'#66bb6a', L:'#ab47bc' };
 const $ = id => document.getElementById(id);
 
-// ===== Canciones de dominio público: [nota, tiempos] =====
-function secuencia(seq, bpm, mano) {
-  const out = []; let t = 0;
-  for (const [n, b] of seq) {
-    const d = b * 60 / bpm;
-    if (n) out.push({ midi:n, start:t, dur:d * 0.92, hand:mano });
-    t += d;
+// ===== Biblioteca: canciones de dominio público (arreglos simples a dos manos) =====
+// Notación: nota + octava (C4 = Do central), ":" duración en tiempos; si no se indica,
+// se repite la anterior. "-" = silencio, "C3+E3" = acorde, "|" separa compases (solo para leer).
+const BIBLIOTECA = [
+  { id: 'estrellita', titulo: 'Estrellita ¿dónde estás?', autor: 'Tradicional', nivel: 'Muy fácil', bpm: 100,
+    R: 'C4:1 C4 G4 G4 A4 A4 G4:2 | F4:1 F4 E4 E4 D4 D4 C4:2 | G4:1 G4 F4 F4 E4 E4 D4:2 | G4:1 G4 F4 F4 E4 E4 D4:2 | C4:1 C4 G4 G4 A4 A4 G4:2 | F4:1 F4 E4 E4 D4 D4 C4:2',
+    L: 'C3:4 F3:2 C3:2 | F3:2 C3:2 G2:2 C3:2 | C3:2 F3:2 C3:2 G2:2 | C3:2 F3:2 C3:2 G2:2 | C3:4 F3:2 C3:2 | F3:2 C3:2 G2:2 C3:2' },
+  { id: 'martinillo', titulo: 'Martinillo', autor: 'Tradicional (Frère Jacques)', nivel: 'Muy fácil', bpm: 110,
+    R: 'C4:1 D4 E4 C4 | C4 D4 E4 C4 | E4 F4 G4:2 | E4:1 F4 G4:2 | G4:.5 A4 G4 F4 E4:1 C4 | G4:.5 A4 G4 F4 E4:1 C4 | C4 G3 C4:2 | C4:1 G3 C4:2',
+    L: 'C3:4 | C3 | C3 | C3 | C3 | C3 | C3:1 G2 C3:2 | C3:1 G2 C3:2' },
+  { id: 'corderito', titulo: 'María tenía un corderito', autor: 'Tradicional (1830)', nivel: 'Muy fácil', bpm: 110,
+    R: 'E4:1 D4 C4 D4 | E4 E4 E4:2 | D4:1 D4 D4:2 | E4:1 G4 G4:2 | E4:1 D4 C4 D4 | E4 E4 E4 E4 | D4 D4 E4 D4 | C4:4',
+    L: 'C3:4 | C3 | G2 | C3 | C3 | C3 | G2 | C3' },
+  { id: 'himno', titulo: 'Himno a la Alegría', autor: 'Beethoven (1824)', nivel: 'Fácil', bpm: 100,
+    R: 'E4:1 E4 F4 G4 | G4 F4 E4 D4 | C4 C4 D4 E4 | E4:1.5 D4:.5 D4:2 | E4:1 E4 F4 G4 | G4 F4 E4 D4 | C4 C4 D4 E4 | D4:1.5 C4:.5 C4:2 | D4:1 D4 E4 C4 | D4 E4:.5 F4 E4:1 C4 | D4 E4:.5 F4 E4:1 D4 | C4 D4 G3:2 | E4:1 E4 F4 G4 | G4 F4 E4 D4 | C4 C4 D4 E4 | D4:1.5 C4:.5 C4:2',
+    L: 'C3:4 | G2 | C3 | G2 | C3 | G2 | C3 | G2:2 C3:2 | G2:4 | C3 | G2 | G2 | C3 | G2 | C3 | G2:2 C3:2' },
+  { id: 'cumple', titulo: 'Cumpleaños feliz', autor: 'Hill (1893)', nivel: 'Fácil', bpm: 110,
+    R: 'G4:.75 G4:.25 | A4:1 G4 C5 | B4:2 G4:.75 G4:.25 | A4:1 G4 D5 | C5:2 G4:.75 G4:.25 | G5:1 E5 C5 | B4 A4 F5:.75 F5:.25 | E5:1 C5 D5 | C5:3',
+    L: '-:1 | C3:3 | G2 | G2 | C3 | C3 | F2 | C3:2 G2:1 | C3:3' },
+  { id: 'jingle', titulo: 'Jingle Bells (estribillo)', autor: 'Pierpont (1857)', nivel: 'Fácil', bpm: 120,
+    R: 'E4:1 E4 E4:2 | E4:1 E4 E4:2 | E4:1 G4 C4:1.5 D4:.5 | E4:4 | F4:1 F4 F4:1.5 F4:.5 | F4:1 E4 E4 E4:.5 E4 | E4:1 D4 D4 E4 | D4:2 G4:2 | E4:1 E4 E4:2 | E4:1 E4 E4:2 | E4:1 G4 C4:1.5 D4:.5 | E4:4 | F4:1 F4 F4:1.5 F4:.5 | F4:1 E4 E4 E4:.5 E4 | G4:1 G4 F4 D4 | C4:4',
+    L: 'C3:4 | C3 | C3 | C3 | F2 | C3 | G2 | G2 | C3 | C3 | C3 | C3 | F2 | C3 | G2 | C3' },
+  { id: 'nochedepaz', titulo: 'Noche de paz', autor: 'Gruber (1818)', nivel: 'Intermedio', bpm: 150,
+    R: 'G4:3 A4:1 G4:2 | E4:6 | G4:3 A4:1 G4:2 | E4:6 | D5:4 D5:2 | B4:6 | C5:4 C5:2 | G4:6 | A4:4 A4:2 | C5:3 B4:1 A4:2 | G4:3 A4:1 G4:2 | E4:6 | A4:4 A4:2 | C5:3 B4:1 A4:2 | G4:3 A4:1 G4:2 | E4:6 | D5:4 D5:2 | F5:3 D5:1 B4:2 | C5:6 | E5:6 | C5:3 G4:1 E4:2 | G4:3 F4:1 D4:2 | C4:6',
+    L: 'C3:6 | C3 | C3 | C3 | G2 | G2 | C3 | C3 | F2 | F2 | C3 | C3 | F2 | F2 | C3 | C3 | G2 | G2 | C3 | C3 | C3 | G2 | C3' },
+  { id: 'minueto', titulo: 'Minueto en Sol', autor: 'Petzold (c. 1725)', nivel: 'Intermedio', bpm: 110,
+    R: 'D5:1 G4:.5 A4 B4 C5 | D5:1 G4 G4 | E5:1 C5:.5 D5 E5 F#5 | G5:1 G4 G4 | C5:1 D5:.5 C5 B4 A4 | B4:1 C5:.5 B4 A4 G4 | F#4:1 G4:.5 A4 B4 G4 | A4:3 | D5:1 G4:.5 A4 B4 C5 | D5:1 G4 G4 | E5:1 C5:.5 D5 E5 F#5 | G5:1 G4 G4 | C5:1 D5:.5 C5 B4 A4 | B4:1 C5:.5 B4 A4 G4 | A4:1 B4:.5 A4 G4 F#4 | G4:3',
+    L: 'G2:3 | B2 | C3 | B2 | A2 | G2 | D3 | D3 | G2 | B2 | C3 | B2 | A2 | G2 | D3 | G2' },
+  { id: 'elisa', titulo: 'Para Elisa (inicio)', autor: 'Beethoven (1810)', nivel: 'Desafío', bpm: 260,
+    R: 'E5:1 D#5 | E5 D#5 E5 B4 D5 C5 | A4:2 -:1 C4:1 E4 A4 | B4:2 -:1 E4:1 G#4 B4 | C5:2 -:1 E4:1 E5 D#5 | E5 D#5 E5 B4 D5 C5 | A4:2 -:1 C4:1 E4 A4 | B4:2 -:1 E4:1 C5 B4 | A4:6',
+    L: '-:2 | -:6 | A2:1 E3 A3 -:3 | E2:1 E3 G#3 -:3 | A2:1 E3 A3 -:3 | -:6 | A2:1 E3 A3 -:3 | E2:1 E3 G#3 -:3 | A2:1 E3 A3:4' },
+];
+
+const PASO_LETRA = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+function aMidi(txt) {
+  const m = txt.match(/^([A-G])([#b]?)(\d)$/);
+  if (!m) throw new Error('Nota mal escrita en la biblioteca: ' + txt);
+  return (+m[3] + 1) * 12 + PASO_LETRA[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
+}
+function leerTexto(txt, bpm, mano) {
+  const out = []; let t = 0, dur = 1;
+  for (const tok of txt.split(/[\s|]+/).filter(Boolean)) {
+    const [nts, d] = tok.split(':');
+    if (d) dur = parseFloat(d);
+    const seg = dur * 60 / bpm;
+    if (nts !== '-') for (const n of nts.split('+')) out.push({ midi: aMidi(n), start: t, dur: seg * 0.92, hand: mano, amp: 0.7 });
+    t += seg;
   }
   return out;
 }
-
-const CANCIONES = {
-  estrellita: () => {
-    const P1=[[60,1],[60,1],[67,1],[67,1],[69,1],[69,1],[67,2]];
-    const P2=[[65,1],[65,1],[64,1],[64,1],[62,1],[62,1],[60,2]];
-    const P3=[[67,1],[67,1],[65,1],[65,1],[64,1],[64,1],[62,2]];
-    const L1=[[48,4],[53,2],[48,2]], L2=[[53,2],[48,2],[43,2],[48,2]], L3=[[48,2],[53,2],[48,2],[43,2]];
-    return [...secuencia([...P1,...P2,...P3,...P3,...P1,...P2], 100, 'R'),
-            ...secuencia([...L1,...L2,...L3,...L3,...L1,...L2], 100, 'L')];
-  },
-  himno: () => {
-    const A=[[64,1],[64,1],[65,1],[67,1],[67,1],[65,1],[64,1],[62,1],[60,1],[60,1],[62,1],[64,1]];
-    const F1=[[64,1.5],[62,.5],[62,2]], F2=[[62,1.5],[60,.5],[60,2]];
-    const B=[[62,1],[62,1],[64,1],[60,1], [62,1],[64,.5],[65,.5],[64,1],[60,1],
-             [62,1],[64,.5],[65,.5],[64,1],[62,1], [60,1],[62,1],[55,2]];
-    const LA=[[48,4],[43,4],[48,4],[43,4]], LB=[[48,4],[43,4],[48,4],[43,2],[48,2]], LC=[[43,4],[48,4],[43,4],[43,4]];
-    return [...secuencia([...A,...F1,...A,...F2,...B,...A,...F2], 100, 'R'),
-            ...secuencia([...LA,...LB,...LC,...LB], 100, 'L')];
-  }
-};
+const CANCIONES = Object.fromEntries(BIBLIOTECA.map(c =>
+  [c.id, () => [...leerTexto(c.R, c.bpm, 'R'), ...leerTexto(c.L, c.bpm, 'L')]]));
 
 // ===== Estado =====
 let rangoMin = 36, rangoMax = 96;
@@ -198,17 +241,18 @@ function cargarNotas() {
   let lista;
   if ($('cancion').value === 'midi' && midiCargado) {
     const r = +$('pistaDer').value, l = $('pistaIzq').value;
-    const leer = (tr, hand) => tr.notes.map(n => ({ midi:n.midi, start:n.time, dur:n.duration, amp:n.velocity, hand }));
+    const leer = (tr, hand) => tr.notes.map(n => ({ midi:n.midi, start:n.time, dur:n.duration, amp:n.velocity, dedo:n.dedo, hand }));
     lista = leer(midiCargado.tracks[r], 'R');
     if (l === 'auto') lista = asignarManos(lista);
     else if (l !== 'none' && +l !== r) lista.push(...leer(midiCargado.tracks[+l], 'L'));
     const t0 = Math.min(...lista.map(n => n.start));
     lista.forEach(n => n.start -= t0);
-    lista = simplificar(lista);
+    // En una partitura con dos pentagramas las manos ya vienen dadas: no se recortan
+    lista = simplificar(lista, midiCargado.esPartitura && l !== 'auto');
   } else if ($('cancion').value === 'audio' && notasAudio) {
     lista = simplificar(filtrarAudio());
   } else {
-    lista = CANCIONES[$('cancion').value]();
+    lista = simplificar(CANCIONES[$('cancion').value](), true);
   }
   notas = lista.map(n => ({ ...n, midi: ajustar(n.midi), start: n.start + INICIO, hit:false, auto:false, held:false, corta:false, perdida:false }))
                .sort((a, b) => a.start - b.start);
@@ -294,6 +338,12 @@ function dibujar() {
       g.fillStyle = '#000'; g.font = 'bold 10px system-ui'; g.textAlign = 'center';
       g.fillText(nombre(n.midi).replace(/\d/, ''), x + w / 2, yb - 5);
     }
+    if (n.dedo && yb - yt > 30 && w > 10) {          // dedo a usar, en un círculo arriba de la barra
+      const cy = yt + 11, r = Math.min(8, w / 2 - 1);
+      g.fillStyle = '#fff'; g.beginPath(); g.arc(x + w / 2, cy, r, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#000'; g.font = 'bold 10px system-ui'; g.textAlign = 'center';
+      g.fillText(n.dedo, x + w / 2, cy + 3.5);
+    }
   }
   g.globalAlpha = 1;
   g.fillStyle = '#fff'; g.fillRect(0, H - 2, W, 2);
@@ -309,9 +359,9 @@ function actualizarTeclas() {
   if (clave === ultimasMetas) return;
   ultimasMetas = clave;
   document.querySelectorAll('.tecla').forEach(k => { k.classList.remove('meta-R', 'meta-L'); k.textContent = k.dataset.base; });
-  activas.forEach(n => { const k = tecla(n.midi); if (k) { k.classList.add('meta-' + n.hand); k.textContent = nombre(n.midi); } });
+  activas.forEach(n => { const k = tecla(n.midi); if (k) { k.classList.add('meta-' + n.hand); k.textContent = nombre(n.midi) + (n.dedo ? ' ·' + n.dedo : ''); } });
   $('objetivo').innerHTML = activas.length
-    ? activas.map(n => `<span style="color:${COLOR[n.hand]}">${nombre(n.midi)} ${n.hand === 'R' ? '(der)' : '(izq)'}</span>`).join(' + ')
+    ? activas.map(n => `<span style="color:${COLOR[n.hand]}">${nombre(n.midi)} ${n.hand === 'R' ? '(der' : '(izq'}${n.dedo ? ', dedo ' + n.dedo : ''})</span>`).join(' + ')
     : '&nbsp;';
 }
 
@@ -419,15 +469,295 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => { if (MAPA[e.key]) notaOff(MAPA[e.key]); });
 
 // ===== Cargar archivo (MIDI o audio) =====
-$('archivo').onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
+$('archivo').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) abrirArchivo(f); };
+
+async function abrirArchivo(f) {
   const buf = await f.arrayBuffer();
-  e.target.value = '';
   const titulo = f.name.replace(/\.[^.]+$/, '');
-  const cab = String.fromCharCode(...new Uint8Array(buf.slice(0, 4)));
-  if (cab === 'MThd') cargarMidi(buf, titulo);
-  else convertirAudio(buf, titulo);
-};
+  const b = new Uint8Array(buf.slice(0, 8));
+  const cab = String.fromCharCode(...b.slice(0, 4));
+  const inicioTexto = new TextDecoder().decode(buf.slice(0, 400)).replace(/^\uFEFF/, '').trimStart();
+  const esImagen = (b[0] === 0x89 && cab.slice(1) === 'PNG') || (b[0] === 0xFF && b[1] === 0xD8) || cab === '%PDF';
+  marcarTarjeta(null);
+  try {
+    if (cab === 'MThd') cargarMidi(buf, titulo);
+    else if (esImagen) throw new Error('Por ahora Teclamigo no lee fotos ni PDF de partituras. Usa el archivo MusicXML de la partitura, o el audio de la canción.');
+    else if (cab.startsWith('PK')) await cargarMxl(buf, titulo);
+    else if (inicioTexto.startsWith('<')) cargarPartitura(new TextDecoder().decode(buf), titulo);
+    else await convertirAudio(buf, titulo);
+    irAlJuego();
+  } catch (err) { alert(err.message); }
+}
+
+// ===== Bienvenida: arrastrar, elegir archivo y biblioteca =====
+const COLOR_NIVEL = { 'Muy fácil': '#a5d6a7', 'Fácil': '#81d4fa', 'Intermedio': '#ffe082', 'Desafío': '#ef9a9a' };
+function irAlJuego() {
+  $('btnEmpezar').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  $('btnEmpezar').classList.remove('latido'); void $('btnEmpezar').offsetWidth; $('btnEmpezar').classList.add('latido');
+}
+function marcarTarjeta(id) {
+  document.querySelectorAll('.tarjeta').forEach(t => t.classList.toggle('activa', t.dataset.id === id));
+}
+function armarBiblioteca() {
+  const sel = $('cancion');
+  const grupos = {};
+  BIBLIOTECA.forEach(c => (grupos[c.nivel] = grupos[c.nivel] || []).push(c));
+  sel.innerHTML = Object.entries(grupos).map(([nivel, cs]) =>
+    `<optgroup label="Biblioteca · ${nivel}">${cs.map(c => `<option value="${c.id}">${c.titulo}</option>`).join('')}</optgroup>`).join('');
+  $('biblio').innerHTML = BIBLIOTECA.map(c => `
+    <button class="tarjeta" data-id="${c.id}">
+      <b>${c.titulo}</b><span>${c.autor}</span><br>
+      <span class="nivel" style="background:${COLOR_NIVEL[c.nivel]}">${c.nivel}</span>
+    </button>`).join('');
+  document.querySelectorAll('.tarjeta').forEach(t => t.onclick = () => {
+    $('cancion').value = t.dataset.id; $('pistas').hidden = true; $('conversion').hidden = true;
+    marcarTarjeta(t.dataset.id); irAlJuego();
+  });
+  sel.addEventListener('change', () => marcarTarjeta(sel.value));
+}
+armarBiblioteca();
+
+$('zona').onclick = () => $('archivo').click();
+['dragenter', 'dragover'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); $('zona').classList.add('encima'); }));
+['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, e => {
+  e.preventDefault();
+  if (ev === 'dragleave' && e.relatedTarget) return;
+  $('zona').classList.remove('encima');
+}));
+document.addEventListener('drop', e => { const f = e.dataTransfer?.files?.[0]; if (f) abrirArchivo(f); });
+
+// ===== Lector de partituras MusicXML =====
+// Convierte una partitura (partwise) en pistas como las de un MIDI:
+// una pista por pentagrama, con tiempo en segundos, ligaduras unidas,
+// repeticiones desplegadas y la digitación si viene en la partitura.
+const PASOS = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const FIGURA_Q = { whole: 4, half: 2, quarter: 1, eighth: 0.5, '16th': 0.25, '32nd': 0.125 };
+
+const hijo = (el, nombre) => el ? [...el.children].find(c => c.tagName === nombre) || null : null;
+const hijos = (el, nombre) => el ? [...el.children].filter(c => c.tagName === nombre) : [];
+const texto = (el, nombre) => { const h = hijo(el, nombre); return h ? h.textContent.trim() : null; };
+const num = (el, nombre, def = 0) => { const v = parseFloat(texto(el, nombre)); return isFinite(v) ? v : def; };
+
+function leerPartitura(xmlTexto) {
+  const doc = new DOMParser().parseFromString(xmlTexto, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error('El archivo no es un MusicXML válido.');
+  const raiz = doc.documentElement;
+  if (raiz.tagName === 'score-timewise')
+    throw new Error('Esta partitura está en formato "timewise". Expórtala de nuevo como MusicXML normal.');
+  if (raiz.tagName !== 'score-partwise') throw new Error('El archivo no es una partitura MusicXML.');
+
+  const nombres = {};
+  for (const sp of raiz.querySelectorAll('part-list > score-part'))
+    nombres[sp.getAttribute('id')] = texto(sp, 'part-name') || sp.getAttribute('id');
+
+  const pistas = [];
+  let tempos = null;      // el tempo se toma de la primera parte que lo tenga
+  for (const parte of hijos(raiz, 'part')) {
+    const { compases, staves } = leerParte(parte);
+    const { notas, tempoMap } = desplegar(compases);
+    if (!tempos && tempoMap.length) tempos = tempoMap;
+    pistas.push({ id: parte.getAttribute('id'), nombre: nombres[parte.getAttribute('id')] || 'Parte', notas, staves });
+  }
+
+  const aSeg = crearReloj(tempos || []);
+  const salida = [];
+  for (const p of pistas) {
+    const porPentagrama = {};
+    for (const n of p.notas) (porPentagrama[n.staff] = porPentagrama[n.staff] || []).push(n);
+    const pentas = Object.keys(porPentagrama).map(Number).sort((a, b) => a - b);
+    for (const st of pentas) {
+      const notas = porPentagrama[st].map(n => {
+        const ini = aSeg(n.q), fin = aSeg(n.q + n.durQ);
+        return { midi: n.midi, time: ini, duration: Math.max(0.05, fin - ini), velocity: 0.7, dedo: n.dedo };
+      });
+      const lado = pentas.length >= 2 ? (st === pentas[0] ? ' – mano derecha' : st === pentas[1] ? ' – mano izquierda' : ` – pentagrama ${st}`) : '';
+      salida.push({
+        name: p.nombre + lado, notes: notas, pentagrama: st, parte: p.id, dosPentagramas: pentas.length >= 2,
+        instrument: { family: /piano|tecl|keyboard|key|órgano|organ/i.test(p.nombre) || pentas.length >= 2 ? 'piano' : 'otro', percussion: false, name: p.nombre }
+      });
+    }
+  }
+  return { tracks: salida.filter(t => t.notes.length) };
+}
+
+// Lee los compases de una parte (posiciones en negras, relativas al compás)
+function leerParte(parte) {
+  let divisiones = 1, transporte = 0, staves = 1, vueltaActual = null;
+  const compases = [];
+  for (const m of hijos(parte, 'measure')) {
+    const c = { notas: [], tempos: [], largo: 0, adelante: false, atras: 0, vuelta: null };
+    let pos = 0, inicioUltima = 0;
+    if (vueltaActual) c.vuelta = vueltaActual;
+    for (const el of m.children) {
+      switch (el.tagName) {
+        case 'attributes': {
+          const d = num(el, 'divisions', 0); if (d > 0) divisiones = d;
+          const s = num(el, 'staves', 0); if (s > 0) staves = s;
+          const tr = hijo(el, 'transpose'); if (tr) transporte = num(tr, 'chromatic', 0) + 12 * num(tr, 'octave-change', 0);
+          break;
+        }
+        case 'backup': pos -= num(el, 'duration') / divisiones; break;
+        case 'forward': pos += num(el, 'duration') / divisiones; break;
+        case 'sound': { const t = parseFloat(el.getAttribute('tempo')); if (t > 0) c.tempos.push({ q: pos, qpm: t }); break; }
+        case 'direction': {
+          const s = hijo(el, 'sound'); const t = s ? parseFloat(s.getAttribute('tempo')) : NaN;
+          if (t > 0) { c.tempos.push({ q: pos, qpm: t }); break; }
+          const met = el.querySelector('direction-type > metronome');
+          if (met && texto(met, 'per-minute')) {
+            const unidad = (FIGURA_Q[texto(met, 'beat-unit')] || 1) * (hijo(met, 'beat-unit-dot') ? 1.5 : 1);
+            const pm = parseFloat(texto(met, 'per-minute'));
+            if (pm > 0) c.tempos.push({ q: pos, qpm: pm * unidad });
+          }
+          break;
+        }
+        case 'barline': {
+          const rep = hijo(el, 'repeat');
+          if (rep && rep.getAttribute('direction') === 'forward') c.adelante = true;
+          if (rep && rep.getAttribute('direction') === 'backward') c.atras = parseInt(rep.getAttribute('times')) || 2;
+          const end = hijo(el, 'ending');
+          if (end) {
+            const nums = new Set((end.getAttribute('number') || '1').split(/[ ,]+/).map(Number).filter(Boolean));
+            const tipo = end.getAttribute('type');
+            if (tipo === 'start') { vueltaActual = nums; c.vuelta = nums; }
+            else if (tipo === 'stop' || tipo === 'discontinue') { c.vuelta = c.vuelta || nums; vueltaActual = null; }
+          }
+          break;
+        }
+        case 'note': {
+          if (hijo(el, 'grace')) break;                 // adornos: no ocupan tiempo
+          const esAcorde = !!hijo(el, 'chord');
+          const dur = num(el, 'duration') / divisiones;
+          const ini = esAcorde ? inicioUltima : pos;
+          if (!esAcorde) { inicioUltima = pos; pos += dur; }
+          const tono = hijo(el, 'pitch');
+          if (!tono || hijo(el, 'rest') || hijo(el, 'cue')) break;   // silencios y notas de referencia
+          const midi = (num(tono, 'octave', 4) + 1) * 12 + PASOS[texto(tono, 'step')] + Math.round(num(tono, 'alter', 0)) + transporte;
+          const ligaduras = hijos(el, 'tie').map(t => t.getAttribute('type'));
+          const dedoTxt = el.querySelector('notations > technical > fingering');
+          const dedo = dedoTxt ? parseInt(dedoTxt.textContent) : null;
+          c.notas.push({
+            q: ini, durQ: dur, midi, staff: parseInt(texto(el, 'staff')) || 1,
+            ligaIni: ligaduras.includes('start'), ligaFin: ligaduras.includes('stop'),
+            dedo: dedo >= 1 && dedo <= 5 ? dedo : null
+          });
+          break;
+        }
+      }
+      c.largo = Math.max(c.largo, pos);
+    }
+    compases.push(c);
+  }
+  return { compases, staves };
+}
+
+// Despliega repeticiones y vueltas, une ligaduras y arma el mapa de tempo
+function desplegar(compases) {
+  const orden = [];
+  let i = 0, vuelta = 1, inicioRep = 0, ultimaCasilla = -1;
+  const hechas = new Map();
+  while (i < compases.length && orden.length < 5000) {
+    const c = compases[i];
+    if (c.adelante) inicioRep = i;
+    if (c.vuelta && !c.vuelta.has(vuelta)) { i++; continue; }
+    // Recién cuando avanzamos más allá de las casillas 1ª/2ª se vuelve a contar desde 1
+    // (al saltar atrás para repetir NO se reinicia).
+    if (c.vuelta) ultimaCasilla = i;
+    else if (ultimaCasilla >= 0 && i > ultimaCasilla) { vuelta = 1; ultimaCasilla = -1; }
+    orden.push(i);
+    if (c.atras) {
+      const veces = hechas.get(i) || 0;
+      if (veces < c.atras - 1) { hechas.set(i, veces + 1); vuelta = veces + 2; i = inicioRep; continue; }
+      vuelta = 1; hechas.delete(i); inicioRep = i + 1;
+    }
+    i++;
+  }
+
+  const notas = [], tempoMap = [];
+  let q0 = 0;
+  for (const idx of orden) {
+    const c = compases[idx];
+    c.tempos.forEach(t => tempoMap.push({ q: q0 + t.q, qpm: t.qpm }));
+    c.notas.forEach(n => notas.push({ ...n, q: q0 + n.q }));
+    q0 += c.largo;
+  }
+
+  // Ligaduras: la nota que termina una ligadura alarga a la anterior
+  notas.sort((a, b) => a.q - b.q);
+  const abiertas = new Map(), unidas = [];
+  for (const n of notas) {
+    const clave = n.staff + ':' + n.midi;
+    const previa = abiertas.get(clave);
+    if (n.ligaFin && previa && Math.abs(previa.q + previa.durQ - n.q) < 0.01) {
+      previa.durQ += n.durQ;
+      if (!n.ligaIni) abiertas.delete(clave);
+      continue;
+    }
+    const copia = { ...n };
+    unidas.push(copia);
+    if (n.ligaIni) abiertas.set(clave, copia); else abiertas.delete(clave);
+  }
+  tempoMap.sort((a, b) => a.q - b.q);
+  return { notas: unidas, tempoMap };
+}
+
+// Convierte posiciones en negras a segundos, respetando los cambios de tempo
+function crearReloj(tempos) {
+  const tramos = [{ q: 0, seg: 0, qpm: 100 }];          // si la partitura no dice tempo: 100 negras por minuto
+  for (const t of tempos) {
+    const u = tramos[tramos.length - 1];
+    if (t.q <= u.q + 1e-9) { u.qpm = t.qpm; continue; }
+    tramos.push({ q: t.q, seg: u.seg + (t.q - u.q) * 60 / u.qpm, qpm: t.qpm });
+  }
+  return q => {
+    let t = tramos[0];
+    for (const x of tramos) { if (x.q <= q + 1e-9) t = x; else break; }
+    return t.seg + (q - t.q) * 60 / t.qpm;
+  };
+}
+
+// ===== Cargar partituras =====
+function cargarScript(url) {
+  return new Promise((ok, mal) => {
+    const s = document.createElement('script');
+    s.src = url; s.onload = ok; s.onerror = () => mal(new Error('No se pudo cargar ' + url + ' (¿sin internet?)'));
+    document.head.appendChild(s);
+  });
+}
+
+async function cargarMxl(buf, titulo) {
+  if (!window.JSZip) await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+  const zip = await JSZip.loadAsync(buf);
+  let ruta = null;
+  const cont = zip.file('META-INF/container.xml');
+  if (cont) {
+    const doc = new DOMParser().parseFromString(await cont.async('string'), 'application/xml');
+    ruta = doc.querySelector('rootfile')?.getAttribute('full-path');
+  }
+  if (!ruta || !zip.file(ruta))
+    ruta = Object.keys(zip.files).find(n => /\.(xml|musicxml)$/i.test(n) && !n.startsWith('META-INF'));
+  if (!ruta) throw new Error('El archivo .mxl no trae una partitura adentro.');
+  cargarPartitura(await zip.file(ruta).async('string'), titulo);
+}
+
+function cargarPartitura(xml, titulo) {
+  usarPartitura(leerPartitura(xml), titulo);
+}
+
+function usarPartitura(obj, titulo) {
+  if (!obj.tracks.length) throw new Error('La partitura no tiene notas.');
+  obj.esPartitura = true;
+  midiCargado = obj;
+  prepararPistas(titulo);
+  // Pentagrama de arriba → derecha, de abajo → izquierda (del primer instrumento con dos pentagramas)
+  const piano = obj.tracks.findIndex(t => t.dosPentagramas);
+  if (piano >= 0) {
+    $('pistaDer').value = piano;
+    const izq = obj.tracks.findIndex((t, i) => i > piano && t.parte === obj.tracks[piano].parte);
+    if (izq >= 0) $('pistaIzq').value = izq;
+  }
+  const conDedos = obj.tracks.some(t => t.notes.some(n => n.dedo));
+  $('infoPistas').textContent = '🎼 Partitura' + (conDedos ? ' · con digitación (1 = pulgar … 5 = meñique)' : '');
+}
 
 function opcionCancion(valor, texto) {
   let op = $('cancion').querySelector(`option[value="${valor}"]`);
@@ -439,13 +769,19 @@ function opcionCancion(valor, texto) {
 function cargarMidi(buf, titulo) {
   try { midiCargado = new Midi(buf); }
   catch (err) { alert('El archivo MIDI está dañado o no se pudo leer.'); return; }
+  prepararPistas(titulo);
+}
+
+function prepararPistas(titulo) {
   const todas = midiCargado.tracks.map((tr, i) => ({ tr, i })).filter(x => x.tr.notes.length);
   const sinBateria = todas.filter(x => !x.tr.instrument.percussion);
   if (!sinBateria.length) { alert('Este MIDI no tiene notas (o solo trae batería).'); return; }
   const pianos = sinBateria.filter(x => x.tr.instrument.family === 'piano');
   const con = pianos.length ? pianos : sinBateria;
   const prom = x => x.tr.notes.reduce((s, n) => s + n.midi, 0) / x.tr.notes.length;
-  const etiqueta = x => `${x.tr.instrument.family === 'piano' ? '🎹 ' : ''}Pista ${x.i + 1}: ${x.tr.name || x.tr.instrument.name || 'sin nombre'} (${x.tr.notes.length})`;
+  const etiqueta = x => midiCargado.esPartitura
+    ? `${x.tr.name} (${x.tr.notes.length})`
+    : `${x.tr.instrument.family === 'piano' ? '🎹 ' : ''}Pista ${x.i + 1}: ${x.tr.name || x.tr.instrument.name || 'sin nombre'} (${x.tr.notes.length})`;
   const der = $('pistaDer'), izq = $('pistaIzq');
   der.innerHTML = con.map(x => `<option value="${x.i}">Derecha: ${etiqueta(x)}</option>`).join('');
   izq.innerHTML = `<option value="auto">Izquierda: automática (notas graves)</option><option value="none">Izquierda: ninguna</option>` +
@@ -459,7 +795,7 @@ function cargarMidi(buf, titulo) {
     ? `🎹 ${pianos.length} pista(s) de piano detectada(s)` + (omitidas ? `, ${omitidas} de otros instrumentos ocultas` : '')
     : `Sin pista de piano: se muestran los demás instrumentos (sin batería)`;
   $('pistas').hidden = false;
-  opcionCancion('midi', '🎵 ' + titulo);
+  opcionCancion('midi', (midiCargado.esPartitura ? '🎼 ' : '🎵 ') + titulo);
 }
 
 // ===== Audio → notas (Basic Pitch de Spotify, corre en tu PC) =====
@@ -585,20 +921,37 @@ function agrupar(l, ventana = 0.06) {
 function asignarManos(l) {
   let cR = 67, cL = 48;
   const out = [];
+  const sonando = { R: [], L: [] };   // notas que cada mano todavía mantiene apretadas
+  const ultimaMano = {};              // qué mano tocó cada tecla la última vez
   for (const g of agrupar([...l].sort((a, b) => a.start - b.start), 0.05)) {
+    const t = g[0].start;
+    for (const h of ['R', 'L']) sonando[h] = sonando[h].filter(n => n.start + n.dur > t + 0.1);
+    const heldL = sonando.L.map(n => n.midi), heldR = sonando.R.map(n => n.midi);
     const ord = [...g].sort((a, b) => a.midi - b.midi);
     let mejor = null, pts = -Infinity;
     for (let k = 0; k <= ord.length; k++) {
       const L = recortarMano(ord.slice(0, k), 'L')[0];
       const R = recortarMano(ord.slice(k), 'R')[0];
-      let mov = 0, fuerza = 0;
-      L.forEach(n => { mov += Math.abs(n.midi - cL); fuerza += fuerzaN(n); });
-      R.forEach(n => { mov += Math.abs(n.midi - cR); fuerza += fuerzaN(n); });
-      const p = 40 * fuerza - mov;     // conservar notas pesa más que no mover la mano
+      let mov = 0, fuerza = 0, cambio = 0;
+      const costo = (n, h, c) => {
+        mov += Math.abs(n.midi - c); fuerza += fuerzaN(n);
+        const u = ultimaMano[n.midi];
+        if (u && u.h !== h && t - u.t < 2) cambio += 6;          // la tecla prefiere su mano de siempre
+      };
+      L.forEach(n => costo(n, 'L', cL));
+      R.forEach(n => costo(n, 'R', cR));
+      // Las manos no se cruzan: la izquierda siempre queda bajo la derecha,
+      // contando también las notas que siguen sonando.
+      const altoL = Math.max(-Infinity, ...heldL, ...L.map(n => n.midi));
+      const bajoR = Math.min(Infinity, ...heldR, ...R.map(n => n.midi));
+      const cruce = altoL >= bajoR ? 200 : 0;
+      const p = 40 * fuerza - mov - cambio - cruce;    // conservar notas pesa más que no mover la mano
       if (p > pts) { pts = p; mejor = { L, R }; }
     }
-    mejor.L.forEach(n => out.push({ ...n, hand: 'L' }));
-    mejor.R.forEach(n => out.push({ ...n, hand: 'R' }));
+    for (const h of ['L', 'R']) mejor[h].forEach(n => {
+      const c = { ...n, hand: h };
+      out.push(c); sonando[h].push(c); ultimaMano[n.midi] = { h, t };
+    });
     const prom = a => a.reduce((s, n) => s + n.midi, 0) / a.length;
     if (mejor.L.length) cL = 0.7 * cL + 0.3 * prom(mejor.L);
     if (mejor.R.length) cR = 0.7 * cR + 0.3 * prom(mejor.R);
@@ -679,9 +1032,9 @@ function manosPosibles(l) {
   return quitarSaltos(out);
 }
 
-function simplificar(l) {
+function simplificar(l, exacta = false) {
   const d = $('dificultad').value;
-  l = manosPosibles(l);
+  if (!exacta) l = manosPosibles(l);
   if (d === 'avanzado') return l;
   const k = d === 'principiante' ? 1 : 2;
   const fuerza = n => n.amp ?? 0.7;
@@ -709,7 +1062,7 @@ function simplificar(l) {
 
 // ===== Limpieza de notas del motor de piano =====
 // Quita lo que se "cuela" de otros instrumentos y las notas repetidas por error:
-//  1. Re-ataques: la misma nota que vuelve a empezar justo al terminar, más suave → se une con la anterior.
+//  1. Trozos: la misma nota que vuelve a empezar justo al terminar → se une con la anterior.
 //  2. Notas débiles: mucho más suaves que las notas cercanas (±0.75 s, ±1 octava) → son filtraciones.
 //  3. Fantasmas: notas muy cortas y suaves.
 const RELATIVO = { suave: 0.30, normal: 0.45, fuerte: 0.60 };
@@ -720,7 +1073,10 @@ function limpiarPiano(l, nivel) {
   const unidas = [], ultima = {};
   for (const n of ord) {
     const p = ultima[n.midi];
-    if (p && n.start - (p.start + p.dur) < 0.06 && n.amp < p.amp * 0.8) {
+    const hueco = p ? n.start - (p.start + p.dur) : 9;
+    // Trozos de la misma nota: empieza justo cuando termina la anterior (sin pisarla),
+    // casi sin pausa, o con poca pausa y más suave
+    if (p && hueco > -0.02 && (hueco < 0.03 || (hueco < 0.06 && n.amp < p.amp * 0.8))) {
       p.dur = Math.max(p.dur, n.start + n.dur - p.start);
       continue;
     }

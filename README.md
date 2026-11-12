@@ -11,6 +11,12 @@ App para aprender a tocar teclado o piano, pensada para principiantes. Conectas 
   - *Espera*: no avanza hasta que tocas la nota correcta.
   - *Continuo*: avanza con ritmo, como el juego.
   - *Escuchar*: la app toca la canción sola con sonido de piano real.
+- **Pantalla de bienvenida**: arrastra tu canción o elige una de la biblioteca.
+- **Biblioteca incluida** de canciones de dominio público con arreglos simples a dos manos (Estrellita, Martinillo, Cumpleaños feliz, Himno a la Alegría, Jingle Bells, Noche de paz, Minueto en Sol, Para Elisa y más), por nivel.
+- **Lee partituras MusicXML** (`.musicxml`, `.xml`, `.mxl`, el formato que exportan MuseScore, Finale y Sibelius):
+  - El pentagrama de arriba es la mano derecha y el de abajo la izquierda.
+  - Respeta acordes, ligaduras, repeticiones con 1ª y 2ª vuelta y cambios de tempo.
+  - Si la partitura trae digitación, muestra qué dedo usar (1 = pulgar … 5 = meñique).
 - **Carga canciones** en MIDI, WAV o MP3:
   - En los MIDI elige solo las pistas de piano y descarta la batería.
   - En los audios, separa el piano con [Demucs](https://github.com/facebookresearch/demucs) (Meta) y detecta las notas con un modelo especializado en piano ([High-resolution Piano Transcription](https://github.com/qiuqiangkong/piano_transcription_inference) de ByteDance).
