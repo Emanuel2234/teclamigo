@@ -471,7 +471,6 @@ function listoAudio(titulo) {
   opcionCancion('audio', '🎤 ' + titulo + ' (convertida)');
   $('pistas').hidden = true;
   $('opcAudio').hidden = false;
-  $('limpieza').style.display = fuenteAudio === 'piano' ? 'none' : '';
   $('convBarra').style.width = '100%';
   $('convTxt').textContent = fuenteAudio === 'piano'
     ? '✅ Notas detectadas con el motor de piano. Elige la dificultad y aprieta Empezar.'
@@ -638,9 +637,44 @@ function simplificar(l) {
   return out;
 }
 
+// ===== Limpieza de notas del motor de piano =====
+// Quita lo que se "cuela" de otros instrumentos y las notas repetidas por error:
+//  1. Re-ataques: la misma nota que vuelve a empezar justo al terminar, más suave → se une con la anterior.
+//  2. Notas débiles: mucho más suaves que las notas cercanas (±0.75 s, ±1 octava) → son filtraciones.
+//  3. Fantasmas: notas muy cortas y suaves.
+const RELATIVO = { suave: 0.30, normal: 0.45, fuerte: 0.60 };
+function limpiarPiano(l, nivel) {
+  const rel = RELATIVO[nivel] ?? 0.45;
+  const ord = [...l].sort((a, b) => a.start - b.start);
+
+  const unidas = [], ultima = {};
+  for (const n of ord) {
+    const p = ultima[n.midi];
+    if (p && n.start - (p.start + p.dur) < 0.06 && n.amp < p.amp * 0.8) {
+      p.dur = Math.max(p.dur, n.start + n.dur - p.start);
+      continue;
+    }
+    const c = { ...n }; unidas.push(c); ultima[n.midi] = c;
+  }
+
+  const fuertes = [];
+  let j0 = 0;
+  for (const n of unidas) {
+    while (unidas[j0].start < n.start - 0.75) j0++;
+    let max = 0;
+    for (let j = j0; j < unidas.length && unidas[j].start <= n.start + 0.75; j++)
+      if (Math.abs(unidas[j].midi - n.midi) <= 12) max = Math.max(max, unidas[j].amp);
+    if (n.amp >= max * rel) fuertes.push(n);
+  }
+
+  return fuertes.filter(n => !(n.dur < 0.08 && n.amp < 0.5));
+}
+
 function filtrarAudio() {
   const minDur = +$('minDur').value, minAmp = +$('minAmp').value;
-  return asignarManos(notasAudio.filter(n => n.dur >= minDur && n.amp >= minAmp));
+  let base = notasAudio.filter(n => n.dur >= minDur && n.amp >= minAmp);
+  if (fuenteAudio === 'piano') base = limpiarPiano(base, $('limpieza').value);
+  return asignarManos(base);
 }
 
 function contarAudio() {
@@ -652,6 +686,7 @@ $('minDur').oninput = () => { $('minDurTxt').textContent = (+$('minDur').value).
 $('minAmp').oninput = () => { $('minAmpTxt').textContent = (+$('minAmp').value).toFixed(2); contarAudio(); };
 $('dificultad').onchange = contarAudio;
 $('limpieza').onchange = () => {
+  if (fuenteAudio === 'piano') return contarAudio();
   if (!bpFrames) return;
   $('convTxt').textContent = 'Recalculando notas...';
   setTimeout(() => {
