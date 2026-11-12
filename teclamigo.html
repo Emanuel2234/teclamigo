@@ -579,39 +579,109 @@ function agrupar(l, ventana = 0.06) {
 }
 
 // ===== Reparto de manos =====
-// Sigue dónde está cada mano y, en cada golpe, corta el acorde donde menos
-// tengan que moverse; ninguna mano abarca más de una octava.
+// En cada golpe busca cómo tocarlo con dos manos reales: cada una con 5 dedos y
+// una octava como máximo, moviéndose lo menos posible. Lo que no cabe en ninguna
+// mano se descarta (casi siempre es una nota que se coló de otro instrumento).
 function asignarManos(l) {
   let cR = 67, cL = 48;
   const out = [];
   for (const g of agrupar([...l].sort((a, b) => a.start - b.start), 0.05)) {
     const ord = [...g].sort((a, b) => a.midi - b.midi);
-    let corte = 0, costo = Infinity;
+    let mejor = null, pts = -Infinity;
     for (let k = 0; k <= ord.length; k++) {
-      const L = ord.slice(0, k), R = ord.slice(k);
-      let c = 0;
-      L.forEach(n => c += Math.abs(n.midi - cL));
-      R.forEach(n => c += Math.abs(n.midi - cR));
-      if (L.length && L[L.length - 1].midi - L[0].midi > 12) c += 60;
-      if (R.length && R[R.length - 1].midi - R[0].midi > 12) c += 60;
-      if (c < costo) { costo = c; corte = k; }
+      const L = recortarMano(ord.slice(0, k), 'L')[0];
+      const R = recortarMano(ord.slice(k), 'R')[0];
+      let mov = 0, fuerza = 0;
+      L.forEach(n => { mov += Math.abs(n.midi - cL); fuerza += fuerzaN(n); });
+      R.forEach(n => { mov += Math.abs(n.midi - cR); fuerza += fuerzaN(n); });
+      const p = 40 * fuerza - mov;     // conservar notas pesa más que no mover la mano
+      if (p > pts) { pts = p; mejor = { L, R }; }
     }
-    const L = ord.slice(0, corte), R = ord.slice(corte);
-    L.forEach(n => out.push({ ...n, hand: 'L' }));
-    R.forEach(n => out.push({ ...n, hand: 'R' }));
+    mejor.L.forEach(n => out.push({ ...n, hand: 'L' }));
+    mejor.R.forEach(n => out.push({ ...n, hand: 'R' }));
     const prom = a => a.reduce((s, n) => s + n.midi, 0) / a.length;
-    if (L.length) cL = 0.7 * cL + 0.3 * prom(L);
-    if (R.length) cR = 0.7 * cR + 0.3 * prom(R);
+    if (mejor.L.length) cL = 0.7 * cL + 0.3 * prom(mejor.L);
+    if (mejor.R.length) cR = 0.7 * cR + 0.3 * prom(mejor.R);
     if (cR - cL < 8) { const m = (cR + cL) / 2; cR = m + 4; cL = m - 4; }
   }
-  return out;
+  return quitarSaltos(out);
 }
 
 // ===== Dificultad =====
 // Principiante: 1 nota por mano (melodía arriba, bajo abajo y más espaciado)
 // Intermedio: hasta 2 notas por mano.  Avanzado: todo.
+// ===== Límites físicos de una mano =====
+const MAX_DEDOS = 5;        // notas a la vez por mano
+const MAX_ABERTURA = 12;    // una octava (en semitonos)
+const MAX_SALTO = 14;       // salto máximo...
+const SALTO_TIEMPO = 0.15;  // ...en este tiempo (segundos)
+const fuerzaN = n => n.amp ?? 0.7;
+
+function cabeEnMano(g) {
+  if (g.length > MAX_DEDOS) return false;
+  if (g.length < 2) return true;
+  const p = g.map(n => n.midi);
+  return Math.max(...p) - Math.min(...p) <= MAX_ABERTURA;
+}
+
+// Si una mano tiene un acorde imposible, elige la octava que más "pesa"
+// (premiando la melodía arriba en la derecha y el bajo abajo en la izquierda).
+function recortarMano(g, h) {
+  if (cabeEnMano(g)) return [g, []];
+  const extremo = g.reduce((a, b) => (h === 'R' ? b.midi > a.midi : b.midi < a.midi) ? b : a);
+  let mejor = null, pts = -Infinity;
+  for (const base of g) {
+    const dentro = g.filter(n => n.midi >= base.midi && n.midi <= base.midi + MAX_ABERTURA)
+                    .sort((a, b) => fuerzaN(b) - fuerzaN(a)).slice(0, MAX_DEDOS);
+    const p = dentro.reduce((s, n) => s + fuerzaN(n), 0) + (dentro.includes(extremo) ? 0.3 : 0);
+    if (p > pts) { pts = p; mejor = dentro; }
+  }
+  return [mejor, g.filter(n => !mejor.includes(n))];
+}
+
+// Quita saltos imposibles: si una mano salta muy lejos en muy poco tiempo, sobra el grupo más débil.
+function quitarSaltos(l) {
+  const out = [];
+  for (const h of ['R', 'L']) {
+    const grupos = agrupar(l.filter(n => n.hand === h).sort((a, b) => a.start - b.start), 0.05);
+    const centro = g => g.reduce((s, n) => s + n.midi, 0) / g.length;
+    const fuerte = g => Math.max(...g.map(fuerzaN));
+    const quedan = [];
+    for (const g of grupos) {
+      const prev = quedan[quedan.length - 1];
+      if (prev && g[0].start - prev[0].start < SALTO_TIEMPO && Math.abs(centro(g) - centro(prev)) > MAX_SALTO) {
+        if (fuerte(g) > fuerte(prev)) quedan[quedan.length - 1] = g;
+        continue;
+      }
+      quedan.push(g);
+    }
+    quedan.forEach(g => out.push(...g));
+  }
+  return out;
+}
+
+function manosPosibles(l) {
+  const out = [];
+  for (const g of agrupar([...l].sort((a, b) => a.start - b.start), 0.05)) {
+    const mano = { R: g.filter(n => n.hand === 'R'), L: g.filter(n => n.hand === 'L') };
+    const sobra = [];
+    for (const h of ['R', 'L']) {
+      const [ok, resto] = recortarMano(mano[h], h);
+      mano[h] = ok; sobra.push(...resto);
+    }
+    for (const n of sobra.sort((a, b) => fuerzaN(b) - fuerzaN(a))) {   // ¿le cabe a la otra mano?
+      const otra = n.hand === 'R' ? 'L' : 'R';
+      const prueba = [...mano[otra], { ...n, hand: otra }];
+      if (cabeEnMano(prueba)) mano[otra] = prueba;
+    }
+    out.push(...mano.R, ...mano.L);
+  }
+  return quitarSaltos(out);
+}
+
 function simplificar(l) {
   const d = $('dificultad').value;
+  l = manosPosibles(l);
   if (d === 'avanzado') return l;
   const k = d === 'principiante' ? 1 : 2;
   const fuerza = n => n.amp ?? 0.7;
