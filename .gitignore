@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Pianos separados y canciones (pesan mucho y tienen derechos de autor)
+Piano separado/
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.mid
+*.midi
+
+# Ejecutables (se arman aparte)
+build/
+dist/
+*.spec
+*.exe
+
+# Sistema
+.DS_Store
+Thumbs.db
