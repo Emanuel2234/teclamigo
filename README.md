@@ -11,7 +11,8 @@ App para aprender a tocar teclado o piano, pensada para principiantes. Conectas 
   - *Espera*: no avanza hasta que tocas la nota correcta.
   - *Continuo*: avanza con ritmo, como el juego.
   - *Escuchar*: la app toca la canción sola con sonido de piano real.
-- **Sonido de piano en el PC sin retraso**, con la opción de silenciar el teclado para que se escuche solo el PC. Prueba varias órdenes MIDI (*Local Control*, volumen por canal y volumen general) y te pregunta cuál funcionó; si tu teclado no acepta ninguna, te explica cómo apagar sus parlantes.
+- **Sonido de piano en el PC sin retraso**, con la opción de silenciar el teclado para que se escuche solo el PC. Prueba varias órdenes MIDI (*Local Control*, volumen por canal, volumen general y cortar cada nota al instante) y te pregunta cuál funcionó; si tu teclado no acepta ninguna, te explica cómo apagar sus parlantes.
+- **Pantalla completa** (botón ⛶, tecla `P` o doble clic): el teclado y las notas ocupan toda la pantalla, con la opción de acercarse solo a las teclas que usa la canción.
 - **Barra de reproducción**: línea de tiempo que se puede arrastrar, tocar/pausar con la barra espaciadora y ← → para moverse 5 segundos.
 - **Repetir una parte**: marcas dónde empieza y dónde termina, y se repite en bucle para practicarla.
 - **Pantalla de bienvenida**: arrastra tu canción o elige una de la biblioteca.

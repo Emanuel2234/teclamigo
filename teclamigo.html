@@ -98,6 +98,24 @@
   .tecla.error { background:var(--fieltro) !important; color:#fff; }
   .final { color:var(--bien); }
 
+  /* Pantalla completa: el escenario ocupa toda la pantalla, el teclado crece y se ocultan los ajustes de práctica */
+  .solo-completa { display:none !important; }
+  .escenario:fullscreen { display:flex; flex-direction:column; width:100vw; height:100vh; box-sizing:border-box;
+                          border:none; border-radius:0; padding:14px 22px 12px; overflow:hidden; }
+  .escenario:fullscreen::backdrop { background:var(--ebano); }
+  .escenario:fullscreen .solo-completa { display:inline-flex !important; }
+  .escenario:fullscreen .manos-leyenda, .escenario:fullscreen .controles, .escenario:fullscreen .atajos { display:none; }
+  .escenario:fullscreen #objetivo { font-size:2.1rem; min-height:2.8rem; }
+  .escenario:fullscreen .marcador { font-size:1rem; }
+  .escenario:fullscreen #escena { flex:1 1 0; min-height:0; display:flex; flex-direction:column; border-radius:12px; }
+  .escenario:fullscreen canvas { flex:1 1 0; min-height:0; height:auto; }
+  .escenario:fullscreen #piano { flex:none; height:clamp(150px, 25vh, 270px); }
+  .escenario:fullscreen .tecla { font-size:13px; padding-bottom:9px; }
+  .escenario:fullscreen .transporte { margin-top:10px; }
+  .escenario:fullscreen .play { width:46px; height:46px; font-size:1.15rem; }
+  .icono svg { width:18px; height:18px; display:block; margin:auto; }
+  #btnAcercar[aria-pressed="true"] { border-color:var(--der); color:var(--der); }
+
   /* Barra de reproducción */
   .transporte { display:flex; align-items:center; gap:12px; margin-top:14px; flex-wrap:wrap; }
   .play { width:54px; height:54px; border-radius:50%; border:none; background:var(--marfil); color:var(--ebano);
@@ -244,6 +262,11 @@
       <button class="boton" id="btnB" title="Marca dónde termina la parte que quieres repetir" disabled>…hasta aquí</button>
       <button class="icono" id="btnQuitarAB" title="Dejar de repetir" aria-label="Dejar de repetir" hidden>✕</button>
     </div>
+    <button class="boton solo-completa" id="btnAcercar" aria-pressed="true" title="Muestra solo las teclas que usa la canción, más grandes">Acercar a la canción</button>
+    <button class="icono" id="btnPantalla" title="Pantalla completa (P)" aria-label="Pantalla completa">
+      <svg id="icoAmpliar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      <svg id="icoReducir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+    </button>
   </div>
 
   <div class="controles">
@@ -252,7 +275,7 @@
     <div class="grupo"><span class="rotulo" id="rManos">Manos</span><div class="segmentado" data-para="manos" role="group" aria-labelledby="rManos"></div></div>
     <div class="grupo"><label class="rotulo" for="vel">Velocidad <b id="velTxt">70%</b></label><input type="range" id="vel" min="25" max="150" step="5" value="70"></div>
   </div>
-  <div class="atajos"><kbd>Espacio</kbd> tocar o pausar · <kbd>←</kbd> <kbd>→</kbd> retroceder o avanzar 5 segundos · Sin teclado conectado, prueba con <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>G</kbd> <kbd>H</kbd> <kbd>J</kbd> <kbd>K</kbd></div>
+  <div class="atajos"><kbd>Espacio</kbd> tocar o pausar · <kbd>←</kbd> <kbd>→</kbd> retroceder o avanzar 5 segundos · <kbd>P</kbd> pantalla completa · Sin teclado conectado, prueba con <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>G</kbd> <kbd>H</kbd> <kbd>J</kbd> <kbd>K</kbd></div>
 
   <!-- Los selectores reales: los botones de arriba los controlan -->
   <div hidden>
@@ -295,6 +318,7 @@
     <div class="fila-botones">
       <button class="boton" id="btnSigueSonando">Sí, todavía suena</button>
       <button class="boton" id="btnYaNoSuena">Ya no suena</button>
+      <button class="boton" id="btnOtraVez" hidden>Tocar el Do otra vez</button>
     </div>
   </div>
   <p id="ayudaSilencio">Le pide a tu teclado que no haga sonar sus propias teclas, y lo vuelve a activar al cerrar la app. Si algún día queda mudo sin la app abierta, apágalo y préndelo.</p>
@@ -388,12 +412,35 @@ const escuchando = () => modo() === 'escuchar';
 const practica = n => $('manos').value === 'ambas' || n.hand === $('manos').value;
 
 // ===== Piano =====
+// Teclas que se ven: todo el teclado, o (en pantalla completa con "Acercar") solo las octavas que usa la canción
+let acercar = true;
+try { acercar = localStorage.getItem('acercar') !== '0'; } catch (e) {}
+function rangoVisible() {
+  if (!document.fullscreenElement || !acercar || !notas.length) return [rangoMin, rangoMax];
+  let lo = 127, hi = 0;
+  for (const n of notas) { if (n.midi < lo) lo = n.midi; if (n.midi > hi) hi = n.midi; }
+  lo = Math.max(rangoMin, Math.floor(lo / 12) * 12);           // de un Do...
+  hi = Math.min(rangoMax, Math.ceil(hi / 12) * 12);            // ...hasta otro Do
+  while (hi - lo < 24) {                                        // al menos 2 octavas
+    const antes = hi - lo;
+    if (lo - 12 >= rangoMin) lo -= 12;
+    if (hi - lo < 24 && hi + 12 <= rangoMax) hi += 12;
+    if (hi - lo === antes) break;
+  }
+  return [lo, hi];
+}
+let vistaHecha = '';
+function revisarVista() {
+  const [lo, hi] = rangoVisible(), clave = lo + '-' + hi;
+  if (clave !== vistaHecha) dibujarPiano();
+}
 function dibujarPiano() {
   const piano = $('piano'); piano.innerHTML = ''; pos = {};
+  const [vMin, vMax] = rangoVisible(); vistaHecha = vMin + '-' + vMax;
   const blancas = [];
-  for (let n = rangoMin; n <= rangoMax; n++) if (!esNegra(n)) blancas.push(n);
+  for (let n = vMin; n <= vMax; n++) if (!esNegra(n)) blancas.push(n);
   const a = 1 / blancas.length; let i = 0;
-  for (let n = rangoMin; n <= rangoMax; n++) {
+  for (let n = vMin; n <= vMax; n++) {
     const d = document.createElement('div');
     d.className = 'tecla ' + (esNegra(n) ? 'negra' : 'blanca');
     d.id = 'k' + n;
@@ -454,7 +501,7 @@ function terminar() {
 
 // ===== Bucle principal =====
 function frame(ahora) {
-  try { paso(ahora); } catch (err) { console.error(err); $('objetivo').textContent = '⚠ Error: ' + err.message; }
+  try { revisarVista(); paso(ahora); } catch (err) { console.error(err); $('objetivo').textContent = '⚠ Error: ' + err.message; }
   ultimo = ahora;
   requestAnimationFrame(frame);
 }
@@ -506,11 +553,12 @@ function dibujar() {
   g.fillStyle = fondo; g.fillRect(0, 0, W, H);
   // guías: una línea en cada Do, con su nombre arriba
   g.strokeStyle = 'rgba(233,180,76,.09)'; g.lineWidth = 1;
-  g.fillStyle = 'rgba(233,180,76,.35)'; g.font = `10px ${FUENTE_CANVAS}`; g.textAlign = 'left';
+  const grande = !!document.fullscreenElement;
+  g.fillStyle = 'rgba(233,180,76,.35)'; g.font = `${grande ? 13 : 10}px ${FUENTE_CANVAS}`; g.textAlign = 'left';
   for (let n = rangoMin; n <= rangoMax; n++) if (n % 12 === 0 && pos[n]) {
     const x = Math.round(pos[n].x * W) + .5;
     g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
-    g.fillText(nombre(n), x + 3, 12);
+    g.fillText(nombre(n), x + 4, grande ? 18 : 12);
   }
   for (const n of notas) {
     if (n.start > t + VISTA) break;
@@ -527,15 +575,16 @@ function dibujar() {
     rect(x, yt, w, h, Math.min(6, w / 3)); g.fill();
     g.shadowBlur = 0;
     if (n.corta || n.perdida) { g.strokeStyle = '#D0574B'; g.lineWidth = 2; g.stroke(); g.lineWidth = 1; }
-    if (h > 16 && w > 12) {
-      g.fillStyle = '#17130F'; g.font = `bold 10px ${FUENTE_CANVAS}`; g.textAlign = 'center';
-      g.fillText(nombre(n.midi).replace(/\d/, ''), x + w / 2, yb - 5);
+    const fs = Math.round(Math.max(10, Math.min(17, w * 0.42)));   // letra según el ancho de la tecla
+    if (h > fs + 6 && w > 12) {
+      g.fillStyle = '#17130F'; g.font = `bold ${fs}px ${FUENTE_CANVAS}`; g.textAlign = 'center';
+      g.fillText(nombre(n.midi).replace(/\d/, ''), x + w / 2, yb - fs * 0.5);
     }
-    if (n.dedo && h > 30 && w > 10) {                 // dedo a usar, en un círculo arriba de la barra
-      const cy = yt + 11, r = Math.min(8, w / 2 - 1);
+    if (n.dedo && h > fs * 3 && w > 10) {             // dedo a usar, en un círculo arriba de la barra
+      const r = Math.min(fs * 0.8, w / 2 - 1), cy = yt + r + 3;
       g.fillStyle = '#F3EBDD'; g.beginPath(); g.arc(x + w / 2, cy, r, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#17130F'; g.font = `bold 10px ${FUENTE_CANVAS}`; g.textAlign = 'center';
-      g.fillText(n.dedo, x + w / 2, cy + 3.5);
+      g.fillStyle = '#17130F'; g.font = `bold ${fs}px ${FUENTE_CANVAS}`; g.textAlign = 'center';
+      g.fillText(n.dedo, x + w / 2, cy + fs * 0.35);
     }
   }
   g.globalAlpha = 1;
@@ -825,6 +874,33 @@ $('btnCal').onclick = function () {
   }
 };
 
+// ===== Pantalla completa =====
+const escenario = document.querySelector('.escenario');
+function pantallaCompleta() {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else escenario.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+}
+function marcarAcercar() {
+  $('btnAcercar').setAttribute('aria-pressed', acercar);
+  $('btnAcercar').textContent = acercar ? 'Ver todo el teclado' : 'Acercar a la canción';
+  $('btnAcercar').title = acercar ? 'Muestra las teclas de todo tu teclado' : 'Muestra solo las teclas que usa la canción, más grandes';
+}
+document.addEventListener('fullscreenchange', () => {
+  const dentro = document.fullscreenElement === escenario;
+  $('icoAmpliar').hidden = dentro; $('icoReducir').hidden = !dentro;
+  $('btnPantalla').title = dentro ? 'Salir de pantalla completa (P o Esc)' : 'Pantalla completa (P)';
+  $('btnPantalla').setAttribute('aria-label', dentro ? 'Salir de pantalla completa' : 'Pantalla completa');
+  requestAnimationFrame(() => { ajustarCanvas(); dibujarPiano(); });
+});
+$('btnPantalla').onclick = pantallaCompleta;
+$('btnPantalla').hidden = !document.fullscreenEnabled;
+$('lienzo').addEventListener('dblclick', pantallaCompleta);
+$('btnAcercar').onclick = () => {
+  acercar = !acercar; marcarAcercar(); dibujarPiano();
+  try { localStorage.setItem('acercar', acercar ? '1' : '0'); } catch (e) {}
+};
+marcarAcercar();
+
 // Teclado del PC para probar: A S D F G H J K (W E T Y U = negras), espacio = pausa
 const MAPA = { a:60, w:61, s:62, e:63, d:64, f:65, t:66, g:67, y:68, h:69, u:70, j:71, k:72 };
 document.addEventListener('keydown', e => {
@@ -834,6 +910,7 @@ document.addEventListener('keydown', e => {
     if (e.target.id === 'tiempo') return;                 // la línea de tiempo ya maneja sus flechas
     e.preventDefault(); irA(Math.max(0, t - INICIO) + (e.key === 'ArrowRight' ? 5 : -5)); return;
   }
+  if ((e.key === 'p' || e.key === 'P') && !e.repeat && document.fullscreenEnabled) { pantallaCompleta(); return; }
   if (!e.repeat && MAPA[e.key]) notaOn(MAPA[e.key]);
 });
 document.addEventListener('keyup', e => { if (MAPA[e.key]) notaOff(MAPA[e.key]); });
@@ -1616,18 +1693,27 @@ async function procesarEnServidor(buf, titulo, separar, msg) {
 
 // MIDI del teclado
 // ===== Silenciar el teclado =====
-// Cada marca de teclado entiende órdenes distintas, así que se prueban de a una:
+// Cada marca de teclado entiende órdenes distintas, así que se prueban de a una y se pregunta si funcionó:
 //  paso 1: "Local Control" apagado (control 122) + volumen de cada canal en 0 (controles 7 y 11)
 //  paso 2: volumen general del teclado en 0 ("Master Volume" de MIDI general; Chrome pide permiso)
-// Si ninguna sirve, el teclado no acepta órdenes del PC y queda la solución física.
-let accesoMidi = null, accesoSysex = null, pasoSilencio = 1;
-const SILENCIO_FISICO = 'Tu teclado no deja que lo silencien desde el PC. Dos soluciones: conecta unos audífonos (o solo su enchufe) en la entrada PHONES del teclado, así sus parlantes se apagan solos; o baja su volumen al mínimo. En los dos casos las notas igual llegan al PC.';
+//  paso 3: prueba si el teclado escucha al PC (el PC le hace tocar un Do)
+//  paso 4: si escucha, cortar cada nota del teclado apenas se toca (queda un "tic" muy corto)
+// Si nada sirve, queda la solución física.
+let accesoMidi = null, accesoSysex = null, cortarNotas = false;
+const SOLUCION_FISICA = 'La solución es física: conecta unos audífonos (o solo su enchufe) en la entrada PHONES del teclado, así sus parlantes se apagan solos; o baja su volumen al mínimo. En los dos casos las notas igual llegan al PC.';
+const TEXTOS_FIN = {
+  sordo: 'Tu teclado no recibe nada desde el PC (solo envía notas), así que por programa es imposible silenciarlo. ' + SOLUCION_FISICA,
+  fisico: 'Tu teclado recibe órdenes del PC, pero ninguna apaga su propio sonido. ' + SOLUCION_FISICA,
+};
 const SILENCIO_NORMAL = $('ayudaSilencio').textContent;
 // Salidas MIDI hacia teclados reales (Windows agrega un sintetizador propio que no cuenta)
 const salidasTeclado = () => accesoMidi ? [...accesoMidi.outputs.values()].filter(o => !/wavetable/i.test(o.name || '')) : [];
 function enviar(acceso, msg) {
   if (!acceso) return;
-  for (const salida of acceso.outputs.values()) try { salida.send(msg); } catch (e) {}
+  for (const salida of acceso.outputs.values()) {
+    if (/wavetable/i.test(salida.name || '')) continue;
+    try { salida.send(msg); } catch (e) {}
+  }
 }
 function silenciarTeclado(silenciar) {
   for (let c = 0; c < 16; c++) {
@@ -1638,23 +1724,56 @@ function silenciarTeclado(silenciar) {
   const v = silenciar ? 0 : 0x7F;
   enviar(accesoSysex, [0xF0, 0x7F, 0x7F, 0x04, 0x01, v, v, 0xF7]);  // volumen general
 }
+// Paso 4: apenas el teclado manda una nota, se le pide que la apague (en todos los canales)
+function cortarEnTeclado(n) {
+  for (let c = 0; c < 16; c++) { enviar(accesoMidi, [0x80 | c, n, 0]); enviar(accesoMidi, [0xB0 | c, 120, 0]); }
+}
+function notaDePrueba() {
+  enviar(accesoMidi, [0x90, 72, 110]);
+  setTimeout(() => enviar(accesoMidi, [0x80, 72, 0]), 700);
+}
 function guardar(clave, valor) { try { localStorage.setItem(clave, valor); } catch (e) {} }
 function leer(clave) { try { return localStorage.getItem(clave); } catch (e) { return null; } }
-function mostrarPrueba(texto) {
-  $('pruebaSilencio').hidden = !texto;
-  if (texto) $('pruebaTxt').textContent = texto;
+function preguntar(texto, si, no, alSi, alNo, otraVez) {
+  $('pruebaSilencio').hidden = false;
+  $('pruebaTxt').textContent = texto;
+  $('btnSigueSonando').hidden = $('btnYaNoSuena').hidden = !si;
+  $('btnSigueSonando').textContent = si || ''; $('btnSigueSonando').onclick = alSi;
+  $('btnYaNoSuena').textContent = no || '';   $('btnYaNoSuena').onclick = alNo;
+  $('btnOtraVez').hidden = !otraVez; $('btnOtraVez').onclick = otraVez;
 }
-function terminarSilencio(funciono) {
-  mostrarPrueba('');
-  if (funciono) {
-    guardar('silencio', String(pasoSilencio));
-    $('ayudaSilencio').textContent = 'Listo: tu teclado queda en silencio mientras uses la app y vuelve a sonar al cerrarla. Si algún día queda mudo sin la app abierta, apágalo y préndelo.';
-  } else {
-    guardar('silencio', 'fisico');
-    silenciarTeclado(false);
-    $('soloPC').checked = false; guardar('soloPC', '0');
-    $('ayudaSilencio').textContent = SILENCIO_FISICO;
-  }
+function cerrarPrueba() { $('pruebaSilencio').hidden = true; }
+function silencioListo(paso) {
+  cerrarPrueba(); guardar('silencio', String(paso));
+  $('ayudaSilencio').textContent = 'Listo: tu teclado queda en silencio mientras uses la app y vuelve a sonar al cerrarla. Si algún día queda mudo sin la app abierta, apágalo y préndelo.';
+}
+function silencioImposible(motivo) {
+  cerrarPrueba(); guardar('silencio', motivo);
+  cortarNotas = false; silenciarTeclado(false);
+  $('soloPC').checked = false; guardar('soloPC', '0');
+  $('ayudaSilencio').textContent = TEXTOS_FIN[motivo];
+}
+function pasoUno() {
+  cortarNotas = false; silenciarTeclado(true);
+  preguntar('Toca unas teclas. ¿Tu teclado todavía suena?', 'Sí, todavía suena', 'Ya no suena', pasoDos, () => silencioListo(1));
+}
+async function pasoDos() {
+  preguntar('Probando otra forma... Si Chrome te pide permiso para controlar tus dispositivos MIDI, acéptalo.');
+  if (!(await pedirSysex(true))) return pasoTres();
+  silenciarTeclado(true);
+  preguntar('Toca unas teclas otra vez. ¿Tu teclado todavía suena?', 'Sí, todavía suena', 'Ya no suena', pasoTres, () => silencioListo(2));
+}
+function pasoTres(previo) {
+  silenciarTeclado(false);   // con el volumen normal, para que se pueda escuchar la prueba
+  setTimeout(notaDePrueba, 150);
+  preguntar((previo ? 'Las órdenes de volumen no funcionaron con tu teclado. ' : '') +
+    'Ahora el PC le pide a tu teclado que toque un Do. ¿Lo escuchaste salir del teclado?',
+    'Sí, se escuchó', 'No se escuchó', pasoCuatro, () => silencioImposible('sordo'), notaDePrueba);
+}
+function pasoCuatro() {
+  cortarNotas = true; silenciarTeclado(true);
+  preguntar('Último intento: la app le pide al teclado que corte cada nota apenas la tocas (puede quedar un "tic" muy corto). Toca unas teclas: ¿todavía suena?',
+    'Sí, todavía suena', 'Ya no suena (o casi)', () => silencioImposible('fisico'), () => silencioListo(4));
 }
 async function pedirSysex(conPermiso) {
   if (accesoSysex || !navigator.requestMIDIAccess) return !!accesoSysex;
@@ -1669,41 +1788,28 @@ async function pedirSysex(conPermiso) {
 }
 try { $('soloPC').checked = leer('soloPC') === '1'; } catch (e) {}
 if ($('soloPC').checked) $('sonido').checked = true;
-if (leer('silencio') === 'fisico') $('ayudaSilencio').textContent = SILENCIO_FISICO;
+if (TEXTOS_FIN[leer('silencio')]) $('ayudaSilencio').textContent = TEXTOS_FIN[leer('silencio')];
 $('soloPC').onchange = () => {
   const solo = $('soloPC').checked;
   guardar('soloPC', solo ? '1' : '0');
   activarAudio();
-  if (!solo) { silenciarTeclado(false); mostrarPrueba(''); $('ayudaSilencio').textContent = SILENCIO_NORMAL; return; }
+  if (!solo) { cortarNotas = false; silenciarTeclado(false); cerrarPrueba(); $('ayudaSilencio').textContent = SILENCIO_NORMAL; return; }
   $('sonido').checked = true;
   if (!accesoMidi) {
     $('soloPC').checked = false; guardar('soloPC', '0');
     $('ayudaSilencio').textContent = 'Primero conecta tu teclado por USB (y abre la app en Chrome o Edge).';
     return;
   }
-  if (!salidasTeclado().length) {   // el teclado solo envía notas: no recibe órdenes
-    mostrarPrueba(''); $('soloPC').checked = false; guardar('soloPC', '0');
-    $('ayudaSilencio').textContent = 'Tu teclado no recibe órdenes del PC (solo envía notas). ' + SILENCIO_FISICO.replace('Tu teclado no deja que lo silencien desde el PC. ', '');
-    return;
-  }
-  pasoSilencio = 1; silenciarTeclado(true);
-  mostrarPrueba('Toca unas teclas. ¿Tu teclado todavía suena?');
-};
-$('btnYaNoSuena').onclick = () => terminarSilencio(true);
-$('btnSigueSonando').onclick = async () => {
-  if (pasoSilencio === 1) {
-    pasoSilencio = 2;
-    mostrarPrueba('Probando otra forma... Si Chrome te pide permiso para controlar tus dispositivos MIDI, acéptalo.');
-    if (!(await pedirSysex(true))) return terminarSilencio(false);
-    silenciarTeclado(true);
-    mostrarPrueba('Toca unas teclas otra vez. ¿Tu teclado todavía suena?');
-  } else terminarSilencio(false);
+  $('ayudaSilencio').textContent = SILENCIO_NORMAL;
+  if (!salidasTeclado().length) return silencioImposible('sordo');   // el teclado solo envía notas
+  // si ya se probaron las órdenes de volumen antes, se salta directo a lo que falta probar
+  if (TEXTOS_FIN[leer('silencio')]) pasoTres(true); else pasoUno();
 };
 // Si apagas el sonido del PC, el teclado vuelve a sonar (si no, no se escucharía nada)
 $('sonido').addEventListener('change', () => {
   if (!$('sonido').checked && $('soloPC').checked) {
     $('soloPC').checked = false; guardar('soloPC', '0');
-    silenciarTeclado(false); mostrarPrueba('');
+    cortarNotas = false; silenciarTeclado(false); cerrarPrueba();
   }
 });
 // Al cerrar la app, el teclado vuelve a sonar solo
@@ -1712,6 +1818,7 @@ window.addEventListener('pageshow', e => { if (e.persisted && $('soloPC').checke
 async function reaplicarSilencio() {
   if (!$('soloPC').checked) return;
   if (leer('silencio') === '2') await pedirSysex(false);
+  if (leer('silencio') === '4') cortarNotas = true;
   silenciarTeclado(true);
 }
 
@@ -1725,6 +1832,7 @@ if (navigator.requestMIDIAccess) {
       ins.forEach(i => i.onmidimessage = ev => {
         const [st, n, v] = ev.data, tipo = st & 0xF0;
         // primero el sonido (lo más urgente), después la pantalla
+        if (cortarNotas && tipo === 0x90 && v > 0 && $('soloPC').checked) cortarEnTeclado(n);
         if (tipo === 0x90 && v > 0) notaOn(n, v / 127);
         else if (tipo === 0x80 || (tipo === 0x90 && v === 0)) notaOff(n);
         else if (tipo === 0xB0 && n === 64) pedalCambio(v >= 64);   // pedal de sostenido
