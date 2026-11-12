@@ -1,1 +1,3 @@
 demucs
+piano_transcription_inference
+audioread

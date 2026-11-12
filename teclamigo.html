@@ -50,7 +50,7 @@
     <option value="himno">Himno a la Alegría</option>
   </select>
   <label class="btnfile">📂 Cargar canción (MIDI, WAV o MP3)<input type="file" id="archivo" accept=".mid,.midi,.wav,.mp3,.ogg,.m4a,audio/*" hidden></label>
-  <label id="opSeparar" hidden title="Quita voz, batería, guitarra y bajo antes de convertir"><input type="checkbox" id="separarPiano" checked> 🎹 Separar solo el piano (audios)</label>
+  <label id="opSeparar" hidden title="Quita voz, batería, guitarra y bajo antes de convertir"><input type="checkbox" id="separarPiano" checked> 🎹 Separar el piano antes de detectar notas (recomendado si la canción tiene voz)</label>
   <span id="pistas" hidden>
     <span class="ley" style="background:var(--der)"></span><select id="pistaDer"></select>
     <span class="ley" style="background:var(--izq)"></span><select id="pistaIzq"></select>
@@ -62,25 +62,18 @@
   <div id="convTxt">Preparando...</div>
   <div id="barraConv" style="height:6px;background:#333;border-radius:3px;overflow:hidden;margin:6px 0"><div id="convBarra" style="height:100%;width:0;background:var(--amar)"></div></div>
   <div class="fila" id="opcAudio" hidden>
-    <select id="filtroNotas">
-      <option value="melodia">Solo melodía (recomendado)</option>
-      <option value="melbajo">Melodía + bajo (dos manos)</option>
-      <option value="todas">Todas las notas</option>
-    </select>
-    <select id="limpieza">
-      <option value="suave">Limpieza suave (más notas)</option>
-      <option value="normal" selected>Limpieza normal</option>
-      <option value="fuerte">Limpieza fuerte (menos notas)</option>
-    </select>
-    <select id="maxNotas">
-      <option value="2">Máx. 2 notas a la vez</option>
-      <option value="3" selected>Máx. 3 notas a la vez</option>
-      <option value="4">Máx. 4 notas a la vez</option>
-      <option value="6">Máx. 6 notas a la vez</option>
-      <option value="99">Sin límite</option>
-    </select>
-    <label>Ignorar notas de menos de <input type="range" id="minDur" min="0.05" max="0.5" step="0.05" value="0.15"> <b id="minDurTxt">0.15 s</b></label>
-    <label>Volumen mínimo <input type="range" id="minAmp" min="0" max="0.8" step="0.05" value="0.3"> <b id="minAmpTxt">0.30</b></label>
+    <details>
+      <summary style="cursor:pointer;color:#aaa">Ajustes avanzados (normalmente no hace falta tocarlos)</summary>
+      <div class="fila" style="margin-top:6px">
+        <select id="limpieza">
+          <option value="suave">Limpieza suave (más notas)</option>
+          <option value="normal" selected>Limpieza normal</option>
+          <option value="fuerte">Limpieza fuerte (menos notas)</option>
+        </select>
+        <label>Ignorar notas de menos de <input type="range" id="minDur" min="0" max="0.5" step="0.05" value="0.1"> <b id="minDurTxt">0.10 s</b></label>
+        <label>Volumen mínimo <input type="range" id="minAmp" min="0" max="0.8" step="0.05" value="0.2"> <b id="minAmpTxt">0.20</b></label>
+      </div>
+    </details>
     <span id="cuentaAudio" style="color:#aaa"></span>
     <button id="btnDescargar">💾 Descargar como MIDI</button>
   </div>
@@ -91,6 +84,11 @@
     <option value="espera">Modo espera (no avanza si no tocas)</option>
     <option value="continuo">Modo continuo (con ritmo)</option>
     <option value="escuchar">🔊 Modo escuchar (la app toca sola)</option>
+  </select>
+  <select id="dificultad" title="Simplifica cualquier canción cargada">
+    <option value="principiante" selected>Dificultad: Principiante</option>
+    <option value="intermedio">Dificultad: Intermedio</option>
+    <option value="avanzado">Dificultad: Avanzado (todas las notas)</option>
   </select>
   <select id="manos">
     <option value="ambas">Ambas manos</option>
@@ -200,15 +198,15 @@ function cargarNotas() {
   let lista;
   if ($('cancion').value === 'midi' && midiCargado) {
     const r = +$('pistaDer').value, l = $('pistaIzq').value;
-    lista = [];
-    midiCargado.tracks[r].notes.forEach(n =>
-      lista.push({ midi:n.midi, start:n.time, dur:n.duration, hand:(l === 'auto' && n.midi < 60) ? 'L' : 'R' }));
-    if (l !== 'auto' && l !== 'none' && +l !== r)
-      midiCargado.tracks[+l].notes.forEach(n => lista.push({ midi:n.midi, start:n.time, dur:n.duration, hand:'L' }));
+    const leer = (tr, hand) => tr.notes.map(n => ({ midi:n.midi, start:n.time, dur:n.duration, amp:n.velocity, hand }));
+    lista = leer(midiCargado.tracks[r], 'R');
+    if (l === 'auto') lista = asignarManos(lista);
+    else if (l !== 'none' && +l !== r) lista.push(...leer(midiCargado.tracks[+l], 'L'));
     const t0 = Math.min(...lista.map(n => n.start));
     lista.forEach(n => n.start -= t0);
+    lista = simplificar(lista);
   } else if ($('cancion').value === 'audio' && notasAudio) {
-    lista = filtrarAudio();
+    lista = simplificar(filtrarAudio());
   } else {
     lista = CANCIONES[$('cancion').value]();
   }
@@ -466,7 +464,20 @@ function cargarMidi(buf, titulo) {
 
 // ===== Audio → notas (Basic Pitch de Spotify, corre en tu PC) =====
 let notasAudio = null, tituloAudio = '', bpLib = null, bpModelo = null;
-let bpFrames = null, bpOnsets = null, cacheDet = {};
+let bpFrames = null, bpOnsets = null, cacheDet = {}, fuenteAudio = 'basic';
+
+function listoAudio(titulo) {
+  tituloAudio = titulo;
+  opcionCancion('audio', '🎤 ' + titulo + ' (convertida)');
+  $('pistas').hidden = true;
+  $('opcAudio').hidden = false;
+  $('limpieza').style.display = fuenteAudio === 'piano' ? 'none' : '';
+  $('convBarra').style.width = '100%';
+  $('convTxt').textContent = fuenteAudio === 'piano'
+    ? '✅ Notas detectadas con el motor de piano. Elige la dificultad y aprieta Empezar.'
+    : '✅ Conversión lista (detector simple). Elige la dificultad y aprieta Empezar.';
+  contarAudio();
+}
 const BP = 'https://cdn.jsdelivr.net/npm/@spotify/basic-pitch@1.0.1';
 
 async function convertirAudio(buf, titulo) {
@@ -474,10 +485,18 @@ async function convertirAudio(buf, titulo) {
   $('conversion').hidden = false; $('opcAudio').hidden = true; $('convBarra').style.width = '0';
   $('btnEmpezar').disabled = true;
   try {
-    if (servidor && $('separarPiano').checked) {
-      try { buf = await separarEnServidor(buf, titulo, msg); }
+    if (servidor) {
+      let r = null;
+      try { r = await procesarEnServidor(buf, titulo, $('separarPiano').checked, msg); }
       catch (e) {
-        if (!confirm('No se pudo separar el piano:\n' + e.message + '\n\n¿Convertir el audio completo de todas formas?')) throw e;
+        if (!confirm('El motor de piano falló:\n' + e.message + '\n\n¿Usar el detector simple del navegador?')) throw e;
+      }
+      if (r) {
+        notasAudio = r.notas.map(n => ({ midi: n.midi, start: n.start, dur: n.dur, amp: n.vel / 127 }));
+        if (!notasAudio.length) throw new Error('No se detectaron notas de piano en esta canción.');
+        fuenteAudio = 'piano';
+        listoAudio(titulo);
+        return;
       }
       $('convBarra').style.width = '0';
     }
@@ -506,13 +525,8 @@ async function convertirAudio(buf, titulo) {
     bpFrames = frames; bpOnsets = onsets; cacheDet = {};
     notasAudio = detectar();
     if (!notasAudio.length) throw new Error('No se detectaron notas en el audio.');
-
-    tituloAudio = titulo;
-    opcionCancion('audio', '🎤 ' + titulo + ' (convertida)');
-    $('pistas').hidden = true;
-    $('opcAudio').hidden = false;
-    msg(`✅ Conversión lista. Ajusta los filtros si salen notas de más y aprieta Empezar.`);
-    contarAudio();
+    fuenteAudio = 'basic';
+    listoAudio(titulo);
   } catch (err) {
     msg('❌ ' + err.message);
   } finally {
@@ -565,51 +579,78 @@ function agrupar(l, ventana = 0.06) {
   return g;
 }
 
-// Una sola voz: en cada golpe elige la nota más fuerte y más cercana a la anterior
-function unaVoz(l, desde, hasta) {
-  const cand = agrupar(l.filter(n => n.midi >= desde && n.midi < hasta));
+// ===== Reparto de manos =====
+// Sigue dónde está cada mano y, en cada golpe, corta el acorde donde menos
+// tengan que moverse; ninguna mano abarca más de una octava.
+function asignarManos(l) {
+  let cR = 67, cL = 48;
   const out = [];
-  let prev = null;
-  for (const grupo of cand) {
-    if (prev === null) prev = grupo.reduce((s, n) => s + n.midi, 0) / grupo.length;
-    let mejor = null, pts = -Infinity;
-    for (const n of grupo) {
-      const p = n.amp - 0.012 * Math.abs(n.midi - prev);
-      if (p > pts) { pts = p; mejor = n; }
+  for (const g of agrupar([...l].sort((a, b) => a.start - b.start), 0.05)) {
+    const ord = [...g].sort((a, b) => a.midi - b.midi);
+    let corte = 0, costo = Infinity;
+    for (let k = 0; k <= ord.length; k++) {
+      const L = ord.slice(0, k), R = ord.slice(k);
+      let c = 0;
+      L.forEach(n => c += Math.abs(n.midi - cL));
+      R.forEach(n => c += Math.abs(n.midi - cR));
+      if (L.length && L[L.length - 1].midi - L[0].midi > 12) c += 60;
+      if (R.length && R[R.length - 1].midi - R[0].midi > 12) c += 60;
+      if (c < costo) { costo = c; corte = k; }
     }
-    out.push({ ...mejor }); prev = mejor.midi;
+    const L = ord.slice(0, corte), R = ord.slice(corte);
+    L.forEach(n => out.push({ ...n, hand: 'L' }));
+    R.forEach(n => out.push({ ...n, hand: 'R' }));
+    const prom = a => a.reduce((s, n) => s + n.midi, 0) / a.length;
+    if (L.length) cL = 0.7 * cL + 0.3 * prom(L);
+    if (R.length) cR = 0.7 * cR + 0.3 * prom(R);
+    if (cR - cL < 8) { const m = (cR + cL) / 2; cR = m + 4; cL = m - 4; }
   }
-  for (let i = 0; i < out.length - 1; i++)
-    out[i].dur = Math.max(0.08, Math.min(out[i].dur, out[i + 1].start - out[i].start - 0.02));
   return out;
 }
 
-// Deja máximo N notas por golpe (las más fuertes)
-function limitar(l, max) {
-  if (max >= 99) return l;
-  return agrupar(l).flatMap(g => [...g].sort((a, b) => b.amp - a.amp).slice(0, max));
+// ===== Dificultad =====
+// Principiante: 1 nota por mano (melodía arriba, bajo abajo y más espaciado)
+// Intermedio: hasta 2 notas por mano.  Avanzado: todo.
+function simplificar(l) {
+  const d = $('dificultad').value;
+  if (d === 'avanzado') return l;
+  const k = d === 'principiante' ? 1 : 2;
+  const fuerza = n => n.amp ?? 0.7;
+  const out = [];
+  for (const h of ['R', 'L']) {
+    let elegidas = [];
+    for (const g of agrupar(l.filter(n => n.hand === h).sort((a, b) => a.start - b.start), 0.05)) {
+      const max = Math.max(...g.map(fuerza));
+      const fuertes = g.filter(n => fuerza(n) >= max * 0.5)
+                       .sort((a, b) => h === 'R' ? b.midi - a.midi : a.midi - b.midi);
+      elegidas.push(...fuertes.slice(0, k));
+    }
+    if (d === 'principiante' && h === 'L') {
+      const lim = []; let ult = -9;
+      for (const n of elegidas) if (n.dur >= 0.2 && n.start - ult >= 0.8) { lim.push(n); ult = n.start; }
+      elegidas = lim;
+    }
+    if (k === 1)
+      elegidas = elegidas.map((n, i, a) => i < a.length - 1
+        ? { ...n, dur: Math.max(0.08, Math.min(n.dur, a[i + 1].start - n.start - 0.02)) } : n);
+    out.push(...elegidas);
+  }
+  return out;
 }
 
 function filtrarAudio() {
-  const minDur = +$('minDur').value, minAmp = +$('minAmp').value, modoF = $('filtroNotas').value;
-  const base = notasAudio.filter(n => n.dur >= minDur && n.amp >= minAmp).sort((a, b) => a.start - b.start);
-  if (modoF === 'todas')
-    return limitar(base, +$('maxNotas').value).map(n => ({ ...n, hand: n.midi < 60 ? 'L' : 'R' }));
-  const mel = unaVoz(base, 60, 100).map(n => ({ ...n, hand: 'R' }));
-  if (modoF === 'melodia') return mel;
-  const baj = unaVoz(base, 24, 60).map(n => ({ ...n, hand: 'L' }));
-  return [...mel, ...baj];
+  const minDur = +$('minDur').value, minAmp = +$('minAmp').value;
+  return asignarManos(notasAudio.filter(n => n.dur >= minDur && n.amp >= minAmp));
 }
 
 function contarAudio() {
   if (!notasAudio) return;
-  $('cuentaAudio').textContent = `→ ${filtrarAudio().length} notas para tocar`;
+  $('cuentaAudio').textContent = `→ ${simplificar(filtrarAudio()).length} notas para tocar`;
 }
 
 $('minDur').oninput = () => { $('minDurTxt').textContent = (+$('minDur').value).toFixed(2) + ' s'; contarAudio(); };
 $('minAmp').oninput = () => { $('minAmpTxt').textContent = (+$('minAmp').value).toFixed(2); contarAudio(); };
-$('filtroNotas').onchange = contarAudio;
-$('maxNotas').onchange = contarAudio;
+$('dificultad').onchange = contarAudio;
 $('limpieza').onchange = () => {
   if (!bpFrames) return;
   $('convTxt').textContent = 'Recalculando notas...';
@@ -621,7 +662,7 @@ $('limpieza').onchange = () => {
 
 $('btnDescargar').onclick = () => {
   const m = new Midi();
-  const lista = filtrarAudio();
+  const lista = simplificar(filtrarAudio());
   ['R', 'L'].forEach(h => {
     const del = lista.filter(n => n.hand === h);
     if (!del.length) return;
@@ -639,31 +680,33 @@ let servidor = false;
 const esperar = ms => new Promise(r => setTimeout(r, ms));
 const api = async (ruta, op) => { const r = await fetch(ruta, op); if (!r.ok) throw new Error('El separador respondió ' + r.status); return r; };
 
-async function separarEnServidor(buf, titulo, msg) {
+async function procesarEnServidor(buf, titulo, separar, msg) {
   let est = await (await api('/api/estado')).json();
-  if (!est.demucs) {
+  if (!est.motor) {
     await api('/api/instalar', { method: 'POST' });
-    while (!est.demucs) {
+    while (!est.motor) {
       await esperar(2000);
       est = await (await api('/api/estado')).json();
-      if (est.instalacion.estado === 'error') throw new Error('No se pudo instalar el separador: ' + est.instalacion.mensaje);
-      msg('Instalando el separador de piano (solo la primera vez, puede tardar varios minutos)... ' + est.instalacion.mensaje.slice(-70));
+      if (est.instalacion.estado === 'error') throw new Error('No se pudo instalar el motor: ' + est.instalacion.mensaje);
+      msg('Instalando el motor de piano (solo la primera vez, puede tardar varios minutos)... ' + est.instalacion.mensaje.slice(-70));
     }
   }
-  msg('Enviando la canción al separador...');
-  const { id } = await (await api('/api/separar?nombre=' + encodeURIComponent(titulo), { method: 'POST', body: buf })).json();
+  msg('Enviando la canción...');
+  const url = `/api/procesar?separar=${separar ? 1 : 0}&nombre=${encodeURIComponent(titulo)}`;
+  const { id } = await (await api(url, { method: 'POST', body: buf })).json();
   let t;
   while (true) {
     await esperar(1000);
     t = await (await api('/api/trabajo?id=' + id)).json();
     if (t.estado === 'listo') break;
     if (t.estado === 'error') throw new Error(t.mensaje);
-    msg(`Separando el piano... ${t.progreso}%  ${t.mensaje || '(no cierres la ventana negra)'}`);
+    msg(`${t.etapa}... ${t.progreso}%  ${t.mensaje || '(no cierres la terminal)'}`);
     $('convBarra').style.width = t.progreso + '%';
   }
-  if (t.nivel !== null && t.nivel !== undefined && t.nivel < 2)
-    alert(`Ojo: esta canción casi no tiene piano o teclado (${t.nivel}% del volumen). Puede que salgan pocas notas o ruido.`);
-  return await (await api('/api/resultado?id=' + id)).arrayBuffer();
+  const r = await (await api('/api/resultado?id=' + id)).json();
+  if (r.nivel !== null && r.nivel !== undefined && r.nivel < 2)
+    alert(`Ojo: esta canción casi no tiene piano o teclado (${r.nivel}% del volumen). Puede que salgan pocas notas.`);
+  return r;
 }
 
 (async () => {

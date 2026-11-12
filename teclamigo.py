@@ -1,8 +1,10 @@
 """
 Teclamigo - app local
 ------------------------
-Abre la app en el navegador y, cuando cargas un audio, separa el piano/teclado
-con Demucs (modelo htdemucs_6s de Meta) antes de convertirlo a notas.
+Abre la app en el navegador y, cuando cargas un audio:
+  1. separa el piano/teclado con Demucs (modelo htdemucs_6s de Meta), y
+  2. detecta las notas con un modelo especializado en piano
+     (High-resolution Piano Transcription de ByteDance).
 
 Se inicia con:  python teclamigo.py   (Ctrl+C o cerrar la terminal para apagarla).
 Todo corre en tu PC; nada se sube a internet.
@@ -12,6 +14,7 @@ import http.server
 import importlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import socket
@@ -35,6 +38,10 @@ BASE = Path(__file__).resolve().parent
 PAGINA = "teclamigo.html"
 CACHE = BASE / "Piano separado"
 MODELO = "htdemucs_6s"
+PAQUETES = ["demucs", "piano_transcription_inference", "audioread"]
+CKPT_URL = "https://zenodo.org/record/4034264/files/CRNN_note_F1%3D0.9677_pedal_F1%3D0.9186.pth?download=1"
+CKPT = Path.home() / "piano_transcription_inference_data" / "note_F1=0.9677_pedal_F1=0.9186.pth"
+ENV = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
 PUERTO_INICIAL = 8765
 
 TRABAJOS = {}                                   # id -> estado de cada separación
@@ -43,9 +50,9 @@ CANDADO = threading.Lock()
 
 
 # ---------- utilidades ----------
-def demucs_instalado() -> bool:
+def motor_instalado() -> bool:
     importlib.invalidate_caches()
-    return importlib.util.find_spec("demucs") is not None
+    return all(importlib.util.find_spec(p) is not None for p in PAQUETES)
 
 
 def tipo_real(datos: bytes):
@@ -79,9 +86,9 @@ def porcentaje_piano(piano: Path, original: Path):
 # ---------- instalación de Demucs (solo la primera vez) ----------
 def instalar():
     INSTALACION.update(estado="instalando", mensaje="Iniciando...")
-    print("Instalando Demucs (solo la primera vez)...")
+    print("Instalando el motor de notas (solo la primera vez)...")
     try:
-        p = subprocess.Popen([sys.executable, "-m", "pip", "install", "-U", "demucs"],
+        p = subprocess.Popen([sys.executable, "-m", "pip", "install", "-U", *PAQUETES],
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, encoding="utf-8", errors="replace")
         for linea in p.stdout:
@@ -90,7 +97,7 @@ def instalar():
                 print("  " + linea)
                 INSTALACION["mensaje"] = linea[-120:]
         p.wait()
-        if p.returncode == 0 and demucs_instalado():
+        if p.returncode == 0 and motor_instalado():
             INSTALACION.update(estado="listo", mensaje="Instalado")
         else:
             INSTALACION.update(estado="error", mensaje=INSTALACION["mensaje"] or "pip falló")
@@ -98,50 +105,133 @@ def instalar():
         INSTALACION.update(estado="error", mensaje=str(e))
 
 
-# ---------- separación del piano ----------
-def separar(tid: str, datos: bytes, nombre: str):
+# ---------- detección de notas (se corre en un proceso aparte) ----------
+def descargar_modelo():
+    """Descarga el modelo de piano (~170 MB) la primera vez."""
+    if CKPT.exists() and CKPT.stat().st_size > 1.6e8:
+        return
+    CKPT.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CKPT.with_suffix(".descargando")
+    with urllib.request.urlopen(CKPT_URL) as r, open(tmp, "wb") as f:
+        total = int(r.headers.get("Content-Length") or 0)
+        hecho, ultimo = 0, -1
+        while True:
+            trozo = r.read(1 << 20)
+            if not trozo:
+                break
+            f.write(trozo)
+            hecho += len(trozo)
+            if total:
+                pct = int(hecho * 100 / total)
+                if pct != ultimo:
+                    print(f"DESCARGA {pct}", flush=True)
+                    ultimo = pct
+    tmp.replace(CKPT)
+
+
+def transcribir_cli(entrada: str, salida: str):
+    """python teclamigo.py --transcribir audio salida.json"""
+    import julius
+    import numpy as np
+    import sphn
+    import torch
+    from piano_transcription_inference import PianoTranscription, sample_rate
+
+    descargar_modelo()
+    cargar = torch.load          # el modelo es antiguo: torch nuevo exige weights_only=False
+    torch.load = lambda *a, **k: cargar(*a, **{**k, "weights_only": False})
+
+    datos, sr = sphn.read(entrada)
+    mono = torch.from_numpy(np.asarray(datos, dtype=np.float32).mean(axis=0))
+    audio = julius.resample_frac(mono, int(sr), sample_rate).numpy()
+
+    disp = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    modelo = PianoTranscription(device=disp, checkpoint_path=str(CKPT))
+    res = modelo.transcribe(audio, None)
+    import math
+    notas = []
+    for e in res["est_note_events"]:
+        ini, fin = float(e["onset_time"]), float(e["offset_time"])
+        if not (math.isfinite(ini) and math.isfinite(fin)) or fin <= ini:
+            continue                  # a veces el modelo deja una nota con tiempo inválido
+        notas.append({"midi": int(e["midi_note"]), "start": round(ini, 4),
+                      "dur": round(fin - ini, 4), "vel": int(e["velocity"])})
+    Path(salida).write_text(json.dumps(notas, allow_nan=False), encoding="utf-8")
+
+
+# ---------- trabajo completo: separar + detectar ----------
+def correr(cmd, al_leer):
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=ENV,
+                         text=True, encoding="utf-8", errors="replace")
+    ultimas = []
+    for linea in p.stdout:          # tqdm usa \r: el modo texto lo separa en líneas
+        linea = linea.strip()
+        if linea:
+            ultimas = (ultimas + [linea])[-8:]
+            al_leer(linea)
+    p.wait()
+    if p.returncode != 0:
+        raise RuntimeError(" / ".join(ultimas[-3:]) or "falló el proceso")
+
+
+def procesar(tid: str, datos: bytes, nombre: str, separar_piano: bool):
     t = TRABAJOS[tid]
     try:
         CACHE.mkdir(exist_ok=True)
-        huella = hashlib.sha1(datos).hexdigest()[:10]
-        destino = CACHE / f"{nombre_limpio(nombre)} - piano [{huella}].mp3"
-        if destino.exists():
-            t.update(estado="listo", progreso=100, mensaje="Ya estaba separada", resultado=str(destino))
+        base = f"{nombre_limpio(nombre)} [{hashlib.sha1(datos).hexdigest()[:10]}]"
+        cache_json = CACHE / f"{base}{' piano' if separar_piano else ''}.json"
+        if cache_json.exists():
+            t.update(estado="listo", progreso=100, mensaje="Ya estaba procesada", resultado=str(cache_json))
             return
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             entrada = tmp / ("cancion" + tipo_real(datos))
             entrada.write_bytes(datos)
-            cmd = [sys.executable, "-m", "demucs", "-n", MODELO, "--two-stems", "piano",
-                   "--mp3", "--mp3-bitrate", "256", "-o", str(tmp / "salida"), str(entrada)]
-            print(f"Separando el piano de: {nombre}")
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                 text=True, encoding="utf-8", errors="replace")
-            ultimas = []
-            for linea in p.stdout:          # tqdm usa \r: el modo texto lo separa en líneas
-                linea = linea.strip()
-                if not linea:
-                    continue
-                ultimas = (ultimas + [linea])[-8:]
-                m = re.search(r"(\d{1,3})%\|", linea)
+            audio = entrada
+            nivel = None
+            inicio_det = 0
+
+            if separar_piano:
+                print(f"Separando el piano de: {nombre}")
+                t["etapa"] = "Separando el piano"
+
+                def leer_sep(l):
+                    m = re.search(r"(\d{1,3})%\|", l)
+                    if m:
+                        t.update(progreso=int(int(m.group(1)) * 0.5), mensaje="")
+                    elif "download" in l.lower():
+                        t["mensaje"] = "Descargando el separador (solo la primera vez)..."
+                correr([sys.executable, "-m", "demucs", "-n", MODELO, "--two-stems", "piano",
+                        "--mp3", "--mp3-bitrate", "256", "-o", str(tmp / "salida"), str(entrada)], leer_sep)
+                piano = next((tmp / "salida").rglob("piano.mp3"), None)
+                if piano is None:
+                    raise RuntimeError("No se generó la pista de piano")
+                nivel = porcentaje_piano(piano, entrada)
+                audio = CACHE / f"{base} - piano.mp3"
+                shutil.move(str(piano), audio)
+                inicio_det = 50
+
+            print(f"Detectando notas de: {nombre}")
+            t.update(etapa="Detectando las notas", progreso=inicio_det, mensaje="")
+            salida = tmp / "notas.json"
+
+            def leer_det(l):
+                m = re.match(r"DESCARGA (\d+)", l)
                 if m:
-                    t["progreso"] = int(m.group(1))
-                    t["mensaje"] = ""
-                elif "Downloading" in linea or "download" in linea.lower():
-                    t["mensaje"] = "Descargando el modelo (solo la primera vez)..."
-            p.wait()
-            if p.returncode != 0:
-                raise RuntimeError(" / ".join(ultimas[-3:]) or "Demucs falló")
+                    t["mensaje"] = f"Descargando el modelo de piano {m.group(1)}% (solo la primera vez)"
+                    return
+                m = re.match(r"Segment (\d+) / (\d+)", l)
+                if m:
+                    hecho, total = int(m.group(1)), max(1, int(m.group(2)))
+                    t.update(progreso=int(inicio_det + (100 - inicio_det) * hecho / total), mensaje="")
+            correr([sys.executable, str(Path(__file__).resolve()), "--transcribir", str(audio), str(salida)], leer_det)
 
-            piano = next((tmp / "salida").rglob("piano.mp3"), None)
-            if piano is None:
-                raise RuntimeError("No se generó la pista de piano")
-            t["nivel"] = porcentaje_piano(piano, entrada)
-            shutil.move(str(piano), destino)
+            notas = json.loads(salida.read_text(encoding="utf-8"))
+            cache_json.write_text(json.dumps({"notas": notas, "nivel": nivel}), encoding="utf-8")
 
-        print(f"  Listo: {destino.name}")
-        t.update(estado="listo", progreso=100, mensaje="", resultado=str(destino))
+        print(f"  Listo: {len(notas)} notas")
+        t.update(estado="listo", progreso=100, mensaje="", resultado=str(cache_json))
     except Exception as e:
         print(f"  Error: {e}")
         t.update(estado="error", mensaje=str(e))
@@ -184,7 +274,7 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             return
         if url.path == "/api/estado":
-            return self.json({"app": "teclamigo", "demucs": demucs_instalado(), "instalacion": INSTALACION})
+            return self.json({"app": "teclamigo", "motor": motor_instalado(), "instalacion": INSTALACION})
         if url.path == "/api/trabajo":
             t = TRABAJOS.get(q.get("id", [""])[0])
             if not t:
@@ -196,7 +286,7 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
                 return self.send_error(404)
             datos = Path(t["resultado"]).read_bytes()
             self.send_response(200)
-            self.send_header("Content-Type", "audio/mpeg")
+            self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(datos)))
             self.end_headers()
             self.wfile.write(datos)
@@ -212,10 +302,10 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
         q = urllib.parse.parse_qs(url.query)
         if url.path == "/api/instalar":
             with CANDADO:
-                if INSTALACION["estado"] != "instalando" and not demucs_instalado():
+                if INSTALACION["estado"] != "instalando" and not motor_instalado():
                     threading.Thread(target=instalar, daemon=True).start()
             return self.json({"ok": True})
-        if url.path == "/api/separar":
+        if url.path == "/api/procesar":
             largo = int(self.headers.get("Content-Length", "0"))
             if largo <= 0 or largo > 300 * 1024 * 1024:
                 return self.json({"error": "Archivo vacío o demasiado grande"}, 400)
@@ -226,9 +316,10 @@ class Manejador(http.server.SimpleHTTPRequestHandler):
                     break
                 datos += trozo
             tid = uuid.uuid4().hex
-            TRABAJOS[tid] = {"estado": "separando", "progreso": 0, "mensaje": "Preparando...", "nivel": None}
+            TRABAJOS[tid] = {"estado": "procesando", "etapa": "Preparando", "progreso": 0, "mensaje": ""}
             nombre = q.get("nombre", ["cancion"])[0]
-            threading.Thread(target=separar, args=(tid, datos, nombre), daemon=True).start()
+            separar_piano = q.get("separar", ["1"])[0] == "1"
+            threading.Thread(target=procesar, args=(tid, datos, nombre, separar_piano), daemon=True).start()
             return self.json({"id": tid})
         return self.send_error(404)
 
@@ -247,6 +338,8 @@ def puerto_libre(puerto: int) -> bool:
 
 
 def main():
+    if len(sys.argv) == 4 and sys.argv[1] == "--transcribir":
+        return transcribir_cli(sys.argv[2], sys.argv[3])
     if not (BASE / PAGINA).exists():
         print(f"No encuentro {PAGINA} en esta carpeta.")
         input("Enter para salir...")
