@@ -80,9 +80,12 @@
 
   /* Escenario */
   .escenario { background:linear-gradient(180deg, var(--caoba) 0%, #1c1611 100%); border:1px solid var(--veta); border-radius:var(--radio); padding:14px; }
-  .escenario-top { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
-  #objetivo { font-family:var(--titulo); font-size:1.55rem; font-weight:800; min-height:2.1rem; }
-  .marcador { display:flex; gap:16px; color:var(--tenue); font-size:.9rem; }
+  .escenario-top { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin-bottom:10px; }
+  /* una sola línea: si suenan muchas notas se corta con "…" en vez de empujar el teclado hacia abajo */
+  #objetivo { font-family:var(--titulo); font-size:1.55rem; font-weight:800; line-height:1.25; height:3.9rem; flex:1; min-width:0;
+              display:flex; align-items:flex-end; overflow:hidden; }
+  #objetivo > .lista { display:block; max-height:2.5em; overflow:hidden; }
+  .marcador { display:flex; gap:16px; color:var(--tenue); font-size:.9rem; flex-shrink:0; white-space:nowrap; }
   .marcador b { color:var(--marfil); font-size:1.05rem; margin-left:4px; }
   .manos-leyenda { display:flex; gap:14px; color:var(--tenue); font-size:.88rem; margin-bottom:8px; }
   #escena { position:relative; border-radius:10px; overflow:hidden; box-shadow:0 18px 40px rgba(0,0,0,.45); }
@@ -141,7 +144,7 @@
   .escenario:fullscreen::backdrop { background:var(--ebano); }
   .escenario:fullscreen .solo-completa { display:inline-flex !important; }
   .escenario:fullscreen .manos-leyenda, .escenario:fullscreen .controles, .escenario:fullscreen .atajos { display:none; }
-  .escenario:fullscreen #objetivo { font-size:2.1rem; min-height:2.8rem; }
+  .escenario:fullscreen #objetivo { font-size:2.1rem; height:5.3rem; }
   .escenario:fullscreen .marcador { font-size:1rem; }
   .escenario:fullscreen #escena { flex:1 1 0; min-height:0; display:flex; flex-direction:column; border-radius:12px; }
   .escenario:fullscreen canvas { flex:1 1 0; min-height:0; height:auto; }
@@ -720,12 +723,25 @@ function dibujarPiano() {
 }
 const tecla = n => $('k' + n);
 const ajustar = n => { while (n < rangoMin) n += 12; while (n > rangoMax) n -= 12; return n; };
+// Al acomodar la canción a tu teclado, una octava que no cabe (ej. Sol1 + Sol2 en la izquierda) cae sobre la
+// misma tecla y queda la nota repetida: en modo espera había que tocarla dos veces. Se deja una sola (la más larga).
+function sinRepetidas(lista) {
+  const orden = [...lista].sort((a, b) => a.midi - b.midi || a.start - b.start), fuera = new Set();
+  for (let i = 1; i < orden.length; i++) {
+    const a = orden[i - 1], b = orden[i];
+    if (a.midi === b.midi && b.start - a.start < 0.05 && !fuera.has(a)) {
+      if (b.dur > a.dur) a.dur = b.dur;
+      fuera.add(b); orden[i] = a;
+    }
+  }
+  return fuera.size ? lista.filter(n => !fuera.has(n)) : lista;
+}
 
 // ===== Preparar canción =====
 function cargarNotas() {
   let lista;
   if (edicion && edicion.clave === claveCancion()) {      // la canción tiene cambios hechos a mano
-    notas = edicion.lista.map(n => ({ ...n, start: n.start + INICIO, hit:false, auto:false, held:false, corta:false, perdida:false }))
+    notas = sinRepetidas(edicion.lista.map(n => ({ ...n, start: n.start + INICIO, hit:false, auto:false, held:false, corta:false, perdida:false })))
                          .sort((a, b) => a.start - b.start);
     fin = Math.max(INICIO, ...notas.map(n => n.start + n.dur)) + 0.5;
     return;
@@ -749,7 +765,7 @@ function cargarNotas() {
     lista = simplificar(CANCIONES[$('cancion').value](), true);
     fuentePulso = { pulsos: null, fijo: true };
   }
-  notas = lista.map(n => ({ ...n, midi: ajustar(n.midi), start: n.start + INICIO, hit:false, auto:false, held:false, corta:false, perdida:false }))
+  notas = sinRepetidas(lista.map(n => ({ ...n, midi: ajustar(n.midi), start: n.start + INICIO, hit:false, auto:false, held:false, corta:false, perdida:false })))
                .sort((a, b) => a.start - b.start);
   fin = Math.max(...notas.map(n => n.start + n.dur)) + 0.5;
 }
@@ -904,9 +920,17 @@ function actualizarTeclas() {
   ultimasMetas = clave;
   document.querySelectorAll('.tecla').forEach(k => { k.classList.remove('meta-R', 'meta-L'); k.textContent = k.dataset.base; });
   activas.forEach(n => { const k = tecla(n.midi); if (k) { k.classList.add('meta-' + n.hand); k.textContent = nombre(n.midi) + (n.dedo ? ' ·' + n.dedo : ''); } });
-  $('objetivo').innerHTML = activas.length
-    ? activas.map(n => `<span style="color:${COLOR[n.hand]}">${nombre(n.midi)} ${n.hand === 'R' ? '(der' : '(izq'}${n.dedo ? ', dedo ' + n.dedo : ''})</span>`).join(' + ')
+  // cada tecla una sola vez, de grave a agudo (como se ven en el teclado)
+  const vistas = new Set(), lista = activas.filter(n => !vistas.has(n.midi + n.hand) && vistas.add(n.midi + n.hand)).sort((a, b) => a.midi - b.midi);
+  $('objetivo').title = lista.map(n => nombre(n.midi)).join(' + ');
+  const ob = $('objetivo');
+  ob.innerHTML = lista.length
+    ? '<span class="lista">' + lista.map(n => `<span style="color:${COLOR[n.hand]}">${nombre(n.midi)} ${n.hand === 'R' ? '(der' : '(izq'}${n.dedo ? ', dedo ' + n.dedo : ''})</span>`).join(' + ') + '</span>'
     : '&nbsp;';
+  // si no cabe en dos líneas, la letra se achica (el cuadro mide siempre lo mismo: la pantalla no se mueve)
+  ob.style.fontSize = '';
+  const caja = ob.firstElementChild;
+  if (caja) for (let f = 1; caja.scrollHeight > ob.clientHeight + 2 && f > 0.55; ) { f -= 0.08; ob.style.fontSize = (f * 100) + '%'; }
 }
 
 // ===== Entrada =====
@@ -923,7 +947,10 @@ function notaOn(m, vel = 0.7) {
   }
   if (!jugando || pausado || escuchando()) return;
   const c = notas.find(n => practica(n) && !n.hit && n.midi === m && Math.abs(n.start - t) <= TOL);
-  if (c) { c.hit = c.held = true; ultimasMetas = ''; }
+  if (c) {
+    for (const n of notas) if (n.midi === m && !n.hit && practica(n) && Math.abs(n.start - c.start) < 0.05) n.hit = n.held = true;
+    ultimasMetas = '';
+  }
   else {
     errores++; $('errores').textContent = errores;
     if (k) { k.classList.add('error'); setTimeout(() => k.classList.remove('error'), 250); }
@@ -5212,32 +5239,58 @@ async function reaplicarSilencio() {
   silenciarTeclado(true);
 }
 
+// El teclado se puede desconectar y volver a conectar con la app abierta. Chrome avisa los cambios
+// (onstatechange), pero en Windows a veces no ve el teclado que se volvió a enchufar hasta pedir el acceso MIDI
+// de nuevo: por eso, mientras no hay teclado, se vuelve a buscar cada 2 s (y al volver a la ventana).
+function escucharTeclado(i) {
+  i.onmidimessage = ev => {
+    const [st, n, v] = ev.data, tipo = st & 0xF0;
+    // primero el sonido (lo más urgente), después la pantalla
+    if (cortarNotas && tipo === 0x90 && v > 0 && $('soloPC').checked) cortarEnTeclado(n);
+    if (tipo === 0x90 && v > 0) notaOn(n, v / 127);
+    else if (tipo === 0x80 || (tipo === 0x90 && v === 0)) notaOff(n);
+    else if (tipo === 0xB0 && n === 64) pedalCambio(v >= 64);   // pedal de sostenido
+    if (tipo === 0x90 || tipo === 0x80) {
+      const act = $('actividad');
+      act.textContent = `🎹 Recibido: ${nombre(n)} ${tipo === 0x90 && v > 0 ? '↓' : '↑'} (${i.name})`;
+      act.style.background = '#5a4720';
+      clearTimeout(act._t); act._t = setTimeout(() => act.style.background = '', 300);
+    }
+  };
+}
+const tecladosConectados = () => accesoMidi ? [...accesoMidi.inputs.values()].filter(i => i.state === 'connected') : [];
+let habiaTeclado = false;
+function conectarTeclados() {
+  const ins = tecladosConectados();
+  ins.forEach(escucharTeclado);
+  $('estado').textContent = ins.length
+    ? `Conectado: ${ins.map(i => i.name).join(', ')} · ${rangoMax - rangoMin + 1} teclas (${nombre(rangoMin)} → ${nombre(rangoMax)})`
+    : 'No se detecta teclado. Conéctalo por USB (se busca solo) o prueba con A S D F G H J K del PC.';
+  if (ins.length && !habiaTeclado) reaplicarSilencio();
+  habiaTeclado = ins.length > 0;
+}
+let buscandoMidi = false;
+async function buscarTeclado() {
+  if (buscandoMidi) return;
+  buscandoMidi = true;
+  try {
+    const midi = await navigator.requestMIDIAccess();
+    if (midi !== accesoMidi) {
+      if (accesoMidi) { accesoMidi.onstatechange = null; accesoMidi.inputs.forEach(i => i.onmidimessage = null); }
+      accesoMidi = midi;
+      midi.onstatechange = () => conectarTeclados();
+    }
+    conectarTeclados();
+  } catch (e) { $('estado').textContent = 'Permiso MIDI denegado.'; }
+  buscandoMidi = false;
+}
 if (navigator.requestMIDIAccess) {
-  navigator.requestMIDIAccess().then(midi => {
-    const conectar = () => {
-      const ins = [...midi.inputs.values()];
-      $('estado').textContent = ins.length
-        ? `Conectado: ${ins.map(i => i.name).join(', ')} · ${rangoMax - rangoMin + 1} teclas (${nombre(rangoMin)} → ${nombre(rangoMax)})`
-        : 'No se detecta teclado. Puedes probar con A S D F G H J K del PC.';
-      ins.forEach(i => i.onmidimessage = ev => {
-        const [st, n, v] = ev.data, tipo = st & 0xF0;
-        // primero el sonido (lo más urgente), después la pantalla
-        if (cortarNotas && tipo === 0x90 && v > 0 && $('soloPC').checked) cortarEnTeclado(n);
-        if (tipo === 0x90 && v > 0) notaOn(n, v / 127);
-        else if (tipo === 0x80 || (tipo === 0x90 && v === 0)) notaOff(n);
-        else if (tipo === 0xB0 && n === 64) pedalCambio(v >= 64);   // pedal de sostenido
-        if (tipo === 0x90 || tipo === 0x80) {
-          const act = $('actividad');
-          act.textContent = `🎹 Recibido: ${nombre(n)} ${tipo === 0x90 && v > 0 ? '↓' : '↑'} (${i.name})`;
-          act.style.background = '#5a4720';
-          clearTimeout(act._t); act._t = setTimeout(() => act.style.background = '', 300);
-        }
-      });
-    };
-    accesoMidi = midi;
-    conectar(); midi.onstatechange = () => { conectar(); reaplicarSilencio(); };
-    reaplicarSilencio();
-  }).catch(() => $('estado').textContent = 'Permiso MIDI denegado.');
+  buscarTeclado();
+  setInterval(() => { if (!document.hidden && !tecladosConectados().length) buscarTeclado(); }, 2000);
+  window.addEventListener('focus', () => { if (!tecladosConectados().length) buscarTeclado(); });
+  $('estado').title = 'Clic para volver a buscar el teclado';
+  $('estado').style.cursor = 'pointer';
+  $('estado').addEventListener('click', buscarTeclado);
 } else {
   $('estado').textContent = 'Usa Chrome o Edge para conectar el teclado.';
 }
