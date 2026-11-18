@@ -41,7 +41,7 @@ PAGINA = "teclamigo.html"
 CACHE = BASE / "Piano separado"
 MODELO = "htdemucs_6s"
 PAQUETES = ["bs_roformer", "demucs", "transkun"]
-PAQUETES_PIP = ["bs-roformer-infer", "demucs", "transkun"]
+PAQUETES_PIP = ["bs-roformer-infer", "demucs", "transkun", "beat_this"]
 MOTOR = "rf-tk2s"          # va en el nombre de la caché: si cambia el motor, se vuelve a procesar
 SHIFTS = 2               # separación en máxima calidad: Demucs promedia 2 pasadas con pequeños corrimientos
 ENV = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
@@ -279,6 +279,52 @@ def transcribir_cli(entrada: str, salida: str):
     Path(salida).write_text(json.dumps(out, allow_nan=False), encoding="utf-8")
 
 
+def pulsos_cli(entrada: str, salida: str):
+    """python teclamigo.py --pulsos audio salida.json   (Beat This!: cada pulso y dónde empieza cada compás)"""
+    import numpy as np
+    import sphn
+    import torch
+    from beat_this.inference import Audio2Beats
+
+    disp = "cuda" if torch.cuda.is_available() else "cpu"
+    print("PREPARANDO_PULSO", flush=True)
+    detector = Audio2Beats(checkpoint_path=os.environ.get("TECLAMIGO_PULSO_CKPT", "final0"), device=disp, dbn=False)
+    datos, sr = sphn.read(entrada)
+    audio = np.asarray(datos, dtype=np.float32)
+    if audio.ndim == 2:
+        audio = audio.mean(axis=0)
+    compases, pulsos = detector(audio, int(sr))
+    out = {"beats": [round(float(x), 4) for x in pulsos], "downbeats": [round(float(x), 4) for x in compases]}
+    Path(salida).write_text(json.dumps(out), encoding="utf-8")
+    print(f"Pulsos: {len(out['beats'])}, compases: {len(out['downbeats'])}", flush=True)
+
+
+def beat_this_listo() -> bool:
+    try:
+        import beat_this  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def buscar_pulsos(entrada: Path, tmp: Path, t):
+    """Pulso real de la canción (para la partitura). Si algo falla, la app lo calcula a partir de las notas."""
+    try:
+        if not beat_this_listo():
+            t.update(etapa="Instalando el detector de pulso", mensaje="Solo la primera vez")
+            subprocess.run([sys.executable, "-m", "pip", "install", "beat_this"], env=ENV,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        t.update(etapa="Buscando el pulso de la canción", mensaje="La primera vez descarga el detector (~80 MB)")
+        salida = tmp / "pulsos.json"
+        correr([sys.executable, str(Path(__file__).resolve()), "--pulsos", str(entrada), str(salida)], lambda l: None, t)
+        return json.loads(salida.read_text(encoding="utf-8"))
+    except Cancelado:
+        raise
+    except Exception as e:
+        print(f"  No se pudo buscar el pulso ({e}); la app lo calcula con las notas")
+        return None
+
+
 # ---------- trabajo completo: separar + detectar ----------
 class Cancelado(Exception):
     pass
@@ -316,6 +362,13 @@ def procesar(tid: str, datos: bytes, nombre: str, separar_piano: bool, rapido: b
         sep = (" piano rapido" if rapido else " piano") if separar_piano else ""
         cache_json = CACHE / f"{base}{sep} {MOTOR}.json"
         if cache_json.exists():
+            guardado = json.loads(cache_json.read_text(encoding="utf-8"))
+            if "pulsos" not in guardado:
+                with tempfile.TemporaryDirectory() as tmp:
+                    entrada = Path(tmp) / ("cancion" + tipo_real(datos))
+                    entrada.write_bytes(datos)
+                    guardado["pulsos"] = buscar_pulsos(entrada, Path(tmp), t)
+                cache_json.write_text(json.dumps(guardado), encoding="utf-8")
             t.update(estado="listo", progreso=100, mensaje="Ya estaba procesada", resultado=str(cache_json))
             return
 
@@ -418,7 +471,9 @@ def procesar(tid: str, datos: bytes, nombre: str, separar_piano: bool, rapido: b
             correr([sys.executable, str(Path(__file__).resolve()), "--transcribir", str(audio), str(salida)], leer_det, t)
 
             notas = json.loads(salida.read_text(encoding="utf-8"))
-            cache_json.write_text(json.dumps({"notas": notas, "nivel": nivel}), encoding="utf-8")
+            # el pulso se busca en la canción completa (la batería y el bajo ayudan a encontrarlo)
+            pulsos = buscar_pulsos(entrada, tmp, t)
+            cache_json.write_text(json.dumps({"notas": notas, "nivel": nivel, "pulsos": pulsos}), encoding="utf-8")
 
         print(f"  Listo: {len(notas)} notas")
         t.update(estado="listo", progreso=100, mensaje="", resultado=str(cache_json))
@@ -544,6 +599,8 @@ def main():
         return transcribir_cli(sys.argv[2], sys.argv[3])
     if len(sys.argv) == 4 and sys.argv[1] == "--separar":
         return separar_cli(sys.argv[2], sys.argv[3])
+    if len(sys.argv) == 4 and sys.argv[1] == "--pulsos":
+        return pulsos_cli(sys.argv[2], sys.argv[3])
     if not (BASE / PAGINA).exists():
         print(f"No encuentro {PAGINA} en esta carpeta.")
         input("Enter para salir...")
